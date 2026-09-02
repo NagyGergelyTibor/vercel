@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, Cell
@@ -308,26 +308,193 @@ function SkyBackground({ phase, hour, isRaining, isWindy }) {
 const tech = { fontFamily: "'JetBrains Mono', monospace" };
 const ui = { fontFamily: "'Inter', sans-serif" };
 
-function Lbl({ children, t }) {
-  return (<div style={{ ...ui, fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: t.lbl, fontWeight: 600, marginBottom: 8 }}>{children}</div>);
+function Lbl({ children, t, style }) {
+  return (
+    <div style={{ 
+      ...ui, fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', 
+      color: t.lbl, fontWeight: 600, marginBottom: 8,
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      ...style 
+    }}>
+      {children}
+    </div>
+  );
 }
 
 function Card({ children, style, delay = 0, show, t, className }) {
+  const [mounted, setMounted] = useState(false);
+
+  // 1. Megvárjuk, amíg a kártya beúszik (show + delay), utána engedélyezzük a 3D-t
+  useEffect(() => {
+    if (show) {
+      const timer = setTimeout(() => setMounted(true), delay + 600);
+      return () => clearTimeout(timer);
+    } else {
+      setMounted(false);
+    }
+  }, [show, delay]);
+
+  // 2. Kiszámoljuk az egér helyzetét és a dőlés mértékét
+  // 2. Kiszámoljuk az egér helyzetét és a dőlés mértékét
+  const handleMouseMove = (e) => {
+    if (!mounted) return;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // A VARÁZSLAT: Dinamikus maximális dőlésszög a kártya mérete alapján!
+    // Minél nagyobb a kártya (width/height), annál kisebb lesz a szorozószám.
+    // Egy kis kártya kaphat 3 fokot, egy hatalmas csak 0.8 fokot.
+    const maxTiltX = Math.max(0.5, Math.min(3, 400 / rect.height));
+    const maxTiltY = Math.max(0.5, Math.min(3, 400 / rect.width));
+
+    const rx = ((y - rect.height / 2) / (rect.height / 2)) * -maxTiltX;
+    const ry = ((x - rect.width / 2) / (rect.width / 2)) * maxTiltY;
+
+    // Értékek átadása a CSS változóknak
+    el.style.setProperty('--rx', `${rx}deg`);
+    el.style.setProperty('--ry', `${ry}deg`);
+    el.style.setProperty('--gx', `${x}px`);
+    el.style.setProperty('--gy', `${y}px`);
+  };
+
+  const handleMouseLeave = (e) => {
+    const el = e.currentTarget;
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--ry', '0deg');
+  };
+
   const innerLight = t.id === 'day' ? 'inset 0 1px 0 rgba(255,255,255,0.6)' : 'inset 0 1px 0 rgba(255,255,255,0.12)';
   const shadowStyle = t.id === 'day' ? '0 10px 30px rgba(15,23,42,0.04)' : '0 20px 40px rgba(0,0,0,0.25)';
 
+  // 3. Tranzíció cseréje: Beúszáskor lassú (.6s), utána nagyon gyors (.1s) az egeres követéshez
+  const trans = mounted
+    ? 'transform 0.1s ease-out, box-shadow 0.4s, filter 0.4s, background 1s ease, border-color 1.5s ease'
+    : `opacity .6s ease ${delay}ms, transform .6s ease ${delay}ms, background 1s ease`;
+
   return (
-    <div className={`meteo-card${className ? ' ' + className : ''}`} style={{
-      background: t.card, 
-      border: `1px solid ${t.border}`, 
-      borderRadius: 24, 
-      padding: 26,
-      backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
-      opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(22px)',
-      boxShadow: `${shadowStyle}, ${innerLight}`,
-      transition: `opacity .6s ease ${delay}ms, transform .6s ease ${delay}ms, background 1s ease, border-color 1.5s ease`,
-      ...style,
-    }}>{children}</div>
+    <div
+      className={`meteo-card${className ? ' ' + className : ''}`}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        position: 'relative',
+        background: t.card,
+        border: `1px solid ${t.border}`,
+        borderRadius: 24,
+        padding: 26,
+        backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+        opacity: show ? 1 : 0,
+        // Ehelyett CSS változót használunk az emelkedéshez, hogy fuzionálhasson a 3D dőléssel
+        '--start-y': show ? '0px' : '22px',
+        transform: 'perspective(1200px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--start-y, 22px))',
+        boxShadow: `${shadowStyle}, ${innerLight}`,
+        transition: trans,
+        ...style,
+      }}
+    >
+      {/* 4. Csillogás (Glare) - Dinamikusan követi az egeret */}
+      <div className="card-glare" style={{
+        position: 'absolute', inset: 0, zIndex: 0, borderRadius: 'inherit', pointerEvents: 'none',
+        background: `radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255,255,255,0.08) 0%, transparent 60%)`,
+      }} />
+
+      {children}
+    </div>
+  );
+}
+
+// 2. LÉPÉS JAVÍTVA: Finomított, lágy "Apple-style" Shimmer
+function SkeletonBlock({ w = '100%', h = 20, br = 8, th, style }) {
+  const isDay = th.id === 'day';
+  
+  // Visszavettük az átlátszóságot (0.15 -> 0.09) a lágyabb hatásért
+  const baseColor = isDay ? 'rgba(15, 23, 42, 0.03)' : 'rgba(255, 255, 255, 0.03)';
+  const shineColor = isDay ? 'rgba(15, 23, 42, 0.09)' : 'rgba(255, 255, 255, 0.09)';
+
+  return (
+    <div style={{
+      width: w, 
+      height: h, 
+      borderRadius: br,
+      // Összébb húztuk a fénycsóvát (40% - 50% - 60%), hogy vékonyabb és elegánsabb legyen
+      backgroundImage: `linear-gradient(110deg, ${baseColor} 40%, ${shineColor} 50%, ${baseColor} 60%)`,
+      backgroundSize: '200% 100%',
+      // 1.5s helyett 2.5s, és ease-in-out helyett linear (így nem gyorsul fel a közepén)
+      animation: 'skeleton-shimmer 2.5s linear infinite',
+      ...style
+    }} />
+  );
+}
+
+/* ═══════════════ SKELETON CROSSFADE WRAPPER ═══════════════ */
+function SkeletonWrapper({ isLoaded, skeleton, children, delay = 0 }) {
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* ── CSONTVÁZ RÉTEG ── */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        opacity: isLoaded ? 0 : 1, 
+        pointerEvents: isLoaded ? 'none' : 'auto',
+        // A csontváz eltűnése késleltetve
+        transition: `opacity 0.6s ease ${delay}ms`,
+        display: 'flex', flexDirection: 'column'
+      }}>
+        {skeleton}
+      </div>
+      
+      {/* ── VALÓS TARTALOM RÉTEG ── */}
+      <div style={{
+        opacity: isLoaded ? 1 : 0, 
+        transform: isLoaded ? 'translateY(0)' : 'translateY(8px)',
+        // A tartalom beúszása késleltetve (+100ms, hogy a csontváz már javában halványodjon)
+        transition: `opacity 0.8s ease ${delay + 100}ms, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${delay + 100}ms`,
+        flex: 1, display: 'flex', flexDirection: 'column'
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── HYPER-PREMIUM WARM UPDATE: Odometer (Függőleges Számcsúszka) ───
+function OdometerNumber({ value, format = (v) => v.toFixed(1) }) {
+  const valStr = format(value);
+
+  return (
+    <span style={{ display: 'inline-flex', overflow: 'hidden', height: '1em', lineHeight: 1, verticalAlign: 'bottom' }}>
+      {valStr.split('').map((char, index) => {
+        // Stabil kulcs (key) generálása hátulról előre, hogy a számjegyek helyiértéke ne csússzon el
+        const keyIndex = valStr.length - index;
+
+        // Ha nem szám (pl. a tizedespont vagy mínusz jel), azt statikusan kiírjuk
+        if (isNaN(char)) {
+          return <span key={keyIndex} style={{ display: 'inline-block' }}>{char}</span>;
+        }
+
+        // Ha számjegy, legeneráljuk a függőleges 0-9 "filmcsíkot"
+        const digit = parseInt(char, 10);
+        return (
+          <span key={keyIndex} style={{ display: 'inline-block', height: '1em' }}>
+            <span style={{
+              display: 'flex', flexDirection: 'column',
+              // Mivel minden számjegy pontosan 1em magas, így toljuk fel a csíkot a megfelelő helyre:
+              transform: `translateY(-${digit}em)`,
+              // A VARÁZSLAT: A cubic-bezier(0.34, 1.56, 0.64, 1) egy fizikai rugó (spring) 
+              // görbét szimulál. A szám túlszalad a célon, majd finoman visszapattan.
+              transition: 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                <span key={num} style={{ height: '1em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {num}
+                </span>
+              ))}
+            </span>
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -386,8 +553,254 @@ function WindCompass({ show, t }) {
   );
 }
 
+/* ═══════════════ SMART CAPSULE (APPLE INTELLIGENCE STYLE) ═══════════════ */
+
+// 1. A Prioritási Mátrix (Csak a legfontosabbat mondja el)
+function getSmartInsight(phase, isRaining, isWindy) {
+  // 1. SZINT: Kritikus anomáliák (Ezek mindent felülírnak)
+  if (isWindy && R.windSpeed > 40) return { text: "Viharos erejű széllökések várhatók, érdemes rögzíteni a kerti tárgyakat.", tag: { icon: "🌬", label: "Erős szél", color: "#EF4444" } };
+  if (isRaining) return { text: "Aktív csapadéktevékenység zajlik, a kinti páratartalom rohamosan nő.", tag: { icon: "☔", label: "Esős idő", color: "#0EA5E9" } };
+  if (R.pressure < 1000) return { text: "A légnyomás drasztikus esése viharos, instabil időjárás közeledtét jelzi.", tag: { icon: "📉", label: "Nyomásesés", color: "#F59E0B" } };
+
+  // 2. SZINT: Figyelmeztetések és Életmód
+  if (phase === 'day' && R.uvIndex > 6) return { text: "Magas az UV-sugárzás, a déli órákban kerüld a közvetlen napfényt.", tag: { icon: "🧴", label: "Erős UV", color: "#F97316" } };
+  if (R.temp > 30) return { text: `Kritikusan meleg van (${R.temp}°C), ügyelj a megfelelő folyadékpótlásra.`, tag: { icon: "🔥", label: "Hőség", color: "#EF4444" } };
+  if (R.temp < 5) return { text: "Fagyveszély közeli hőmérséklet, az utakon síkosság képződhet.", tag: { icon: "❄️", label: "Hideg", color: "#3B82F6" } };
+
+  // 3. SZINT: Komfortérzet
+  if (R.feelsLike > R.temp + 2) return { text: "A magas páratartalom miatt a levegő fülledtebbnek, melegebbnek érződik.", tag: { icon: "💧", label: "Fülledt", color: "#10B981" } };
+  if (R.feelsLike < R.temp - 2) return { text: "Az élénk légmozgás miatt a valósnál kissé hűvösebbnek érezheted a levegőt.", tag: { icon: "💨", label: "Hűvös szél", color: "#34D399" } };
+
+  // 4. SZINT: Nyugalmi állapot
+  if (phase === 'night' || phase === 'evening') return { text: "Tiszta, csendes éjszaka, stabil és kiegyensúlyozott mérési adatokkal.", tag: { icon: "🌙", label: "Nyugodt", color: "#8B5CF6" } };
+  
+  // Javított nyugalmi állapot ikon (✨ helyett ✅)
+  return { text: "Kiegyensúlyozott, kellemes időnk van, ideális a szabadtéri programokhoz.", tag: { icon: "✅", label: "Ideális", color: "#10B981" } };
+}
+
+// 2. A Vizuális Komponens (Smart Capsule)
+function SmartCapsule({ th, show, phase, isRaining, isWindy }) {
+  const insight = useMemo(() => getSmartInsight(phase, isRaining, isWindy), [phase, isRaining, isWindy]);
+  const [animState, setAnimState] = useState(false);
+
+  useEffect(() => {
+    if (!show) return;
+    setAnimState(false);
+    const t = setTimeout(() => setAnimState(true), 150);
+    return () => clearTimeout(t);
+  }, [show, insight.text]);
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      background: th.card, border: `1px solid ${th.border}`,
+      borderRadius: 99, padding: '8px 10px 8px 18px', height: 48,
+      backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+      boxShadow: th.id === 'day' ? '0 10px 30px rgba(0,0,0,0.03)' : '0 14px 40px rgba(0,0,0,0.2)',
+      opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)',
+      transition: 'opacity 0.6s ease, transform 0.6s ease, background 1s, border-color 1s'
+    }}>
+      
+      {/* Bal oldal: Ragyogó szikra és a Szöveg */}
+      {/* JAVÍTÁS: A minWidth: 0 biztosítja az elipszis működését anélkül, hogy az overflow: hidden levágná az árnyékot */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+          background: `linear-gradient(135deg, ${th.p}, ${th.v})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12,
+          animation: 'live-pulse 2s infinite ease-in-out' // Az árnyék mostmár szabadon ragyoghat
+        }}>✨</div>
+        
+        <div style={{
+          fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: th.t1,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          filter: animState ? 'blur(0px)' : 'blur(8px)',
+          opacity: animState ? 1 : 0,
+          transform: animState ? 'translateZ(0) scale(1)' : 'translateZ(0) scale(0.98)',
+          transition: 'filter 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}>
+          {insight.text}
+        </div>
+      </div>
+
+      {/* Jobb oldal: Színezett, dinamikus címke */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+        borderRadius: 99, flexShrink: 0,
+        background: `${insight.tag.color}15`, border: `1px solid ${insight.tag.color}30`,
+        transition: 'background 0.5s, border-color 0.5s'
+      }}>
+        <span style={{ fontSize: 13 }}>{insight.tag.icon}</span>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: insight.tag.color, letterSpacing: '.02em' }}>
+          {insight.tag.label}
+        </span>
+      </div>
+      
+    </div>
+  );
+}
+
+/* ═══════════════ IOT SYNC RING (NAVBAR VERSION) ═══════════════ */
+function IoTSyncRing({ lastDataTimestamp, simulatedTime, th }) {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const [baseWidth, setBaseWidth] = useState(88);
+  const [hoverWidth, setHoverWidth] = useState(130);
+  
+  const baseTextRef = useRef(null);
+  const hoverTextRef = useRef(null);
+
+  const diffMs = simulatedTime.getTime() - lastDataTimestamp;
+  const diffMins = diffMs / 60000;
+
+  let state = 'normal';
+  let progress = 0;
+  let gradId = 'grad-normal';
+  let glowColor = '#2DD4BF';
+  let text = "";
+  let isPulsing = false;
+
+  // ÁLLAPOTGÉP LOGIKA
+  if (diffMins < 15) {
+    state = 'normal';
+    progress = diffMins / 15;
+    const minsLeft = Math.max(1, Math.ceil(15 - diffMins));
+    text = `Frissítés: ~ ${minsLeft} perc`;
+    gradId = 'grad-normal';
+    glowColor = '#34D399';
+  } else if (diffMins < 17) {
+    state = 'grace';
+    progress = 1;
+    isPulsing = true;
+    text = `Frissítés: ~ 1 perc`;
+    gradId = 'grad-normal';
+    glowColor = '#34D399';
+  } else if (diffMins < 30) {
+    state = 'delayed';
+    progress = 1;
+    gradId = 'grad-delayed';
+    glowColor = '#F59E0B';
+    text = `Késik / Nincs adat`;
+  } else {
+    state = 'offline';
+    progress = 1;
+    gradId = 'grad-offline';
+    glowColor = '#EF4444';
+    text = `Offline / Hiba`;
+  }
+
+  // A GOLYÓÁLLÓ MÉRÉS: ResizeObserver folyamatosan figyeli a DOM elemek méretváltozását
+  useEffect(() => {
+    const baseEl = baseTextRef.current;
+    const hoverEl = hoverTextRef.current;
+    if (!baseEl || !hoverEl) return;
+
+    const observer = new ResizeObserver(() => {
+      // Ha bármi miatt (font betöltés, szövegcsere) változik a méret, azonnal korrigál
+      if (baseTextRef.current) setBaseWidth(baseTextRef.current.offsetWidth);
+      if (hoverTextRef.current) setHoverWidth(hoverTextRef.current.offsetWidth);
+    });
+
+    observer.observe(baseEl);
+    observer.observe(hoverEl);
+
+    // Takarítás, ha a komponens megszűnik
+    return () => observer.disconnect();
+  }, []); // Nincs szükség függőségekre, az observer magától észreveszi a szövegváltozást is!
+
+  const r = 14;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (progress * circ);
+
+  const currentWidth = isHovered ? hoverWidth : baseWidth;
+
+  return (
+    <div 
+      onMouseEnter={() => setIsHovered(true)} 
+      onMouseLeave={() => setIsHovered(false)}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'default' }}
+    >
+      {/* ── BIZTONSÁGOSABB MÉRŐBLOKKOK: Max-content garantálja, hogy nem törnek sorba ── */}
+      <div style={{ position: 'absolute', top: -9999, left: -9999, opacity: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
+        <div ref={baseTextRef} style={{ width: 'max-content', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700, letterSpacing: '.04em' }}>
+          METEO · DSHB
+        </div>
+        <div ref={hoverTextRef} style={{ width: 'max-content', fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: '.02em' }}>
+          {text}
+        </div>
+      </div>
+
+      {/* ── 1. SVG GYŰRŰ ── */}
+      <div style={{ 
+        position: 'relative', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        animation: isPulsing ? 'live-pulse 2s infinite ease-in-out' : 'none', borderRadius: '50%'
+      }}>
+        <svg width="32" height="32" viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)' }}>
+          <defs>
+            <linearGradient id="grad-normal" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#2DD4BF" />
+              <stop offset="100%" stopColor="#059669" />
+            </linearGradient>
+            <linearGradient id="grad-delayed" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#FBBF24" />
+              <stop offset="100%" stopColor="#EA580C" />
+            </linearGradient>
+            <linearGradient id="grad-offline" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#F87171" />
+              <stop offset="100%" stopColor="#BE123C" />
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="16" r={r} fill="none" stroke={`${glowColor}20`} strokeWidth="2.5" />
+          {state !== 'offline' && (
+            <circle cx="16" cy="16" r={r} fill="none" stroke={`url(#${gradId})`} strokeWidth="2.5" 
+              strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" 
+              style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.5s ease' }}
+            />
+          )}
+          {state === 'offline' && (
+            <>
+              <line x1="11" y1="11" x2="21" y2="21" stroke={`url(#${gradId})`} strokeWidth="2.5" strokeLinecap="round" />
+              <line x1="21" y1="11" x2="11" y2="21" stroke={`url(#${gradId})`} strokeWidth="2.5" strokeLinecap="round" />
+            </>
+          )}
+        </svg>
+      </div>
+
+      {/* ── 2. ANIMÁLT, DINAMIKUSAN TÁGULÓ 3D HENGER ── */}
+      <div style={{ 
+        position: 'relative', height: 16, 
+        width: currentWidth,
+        perspective: '600px',
+        transition: 'width 0.4s cubic-bezier(0.16, 1, 0.3, 1)' 
+      }}>
+        <div style={{
+          width: '100%', height: '100%', position: 'relative', transformStyle: 'preserve-3d',
+          transform: isHovered ? 'rotateX(90deg)' : 'rotateX(0deg)',
+          transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            transform: 'translateZ(8px)', backfaceVisibility: 'hidden',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700, color: th.t1, letterSpacing: '.04em', whiteSpace: 'nowrap'
+          }}>
+            METEO · DSHB
+          </div>
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            transform: 'rotateX(-90deg) translateZ(8px)', backfaceVisibility: 'hidden',
+            fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: th.t1, letterSpacing: '.02em', whiteSpace: 'nowrap'
+          }}>
+            {text}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════ NAVIGATION BAR ═══════════════ */
-function NavBar({ currentPage, setCurrentPage, th }) {
+function NavBar({ currentPage, setCurrentPage, th, simulatedTime, lastDataTimestamp }) {
   const [hov, setHov] = useState(null);
   const scrollRef = useRef(null);
   const innerLight = th.id === 'day' ? 'inset 0 1px 0 rgba(255,255,255,0.6)' : 'inset 0 1px 0 rgba(255,255,255,0.12)';
@@ -454,10 +867,18 @@ function NavBar({ currentPage, setCurrentPage, th }) {
       boxShadow: `0 12px 40px rgba(0,0,0,0.12), ${innerLight}`,
     }}>
       
-      {/* ── 1. RÉSZ: FIX LOGÓ ── */}
-      <div className="nav-logo" style={{ borderRight: `1px solid ${th.border}` }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: th.hLive, animation: 'live-pulse 2s infinite ease-in-out' }} />
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700, color: th.t1, letterSpacing: '.04em', whiteSpace: 'nowrap' }}>METEO · DSHB</span>
+      {/* ── 1. RÉSZ: FIX LOGÓ ÉS SYNC RING ── */}
+      <div className="nav-logo" style={{ 
+        borderRight: `1px solid ${th.border}`, 
+        paddingRight: 18,  /* Vonal ELŐTTI tér (balra) */
+        marginRight: 14,   /* Vonal UTÁNI tér (gombok és a vonal között) */
+        paddingLeft: 6     /* Kis extra hely bal oldalon az üveg szélétől */
+      }}>
+        <IoTSyncRing 
+          lastDataTimestamp={lastDataTimestamp} 
+          simulatedTime={simulatedTime} 
+          th={th} 
+        />
       </div>
       
       {/* ── 2. RÉSZ: FLUID GÖRGETHETŐ GOMBOK ── */}
@@ -516,15 +937,275 @@ function ToastContainer({ toasts, th }) {
   );
 }
 
+/* ═══════════════ DYNAMIC FORMAT PILL (MOBILE & DESKTOP) ═══════════════ */
+function FormatPill({ exportFormat, setExportFormat, th }) {
+  // A korábbi 'hov' (hover) állapotot átneveztük isOpen-re, mert most már koppintás is nyithatja
+  const [isOpen, setIsOpen] = useState(false);
+  const pillRef = useRef(null);
+  const formats = ['csv', 'json', 'xml'];
+
+  // Bezárás, ha a kapszulán kívülre kattintanak/koppintanak (Mobil védelem)
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pillRef.current && !pillRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    
+    // Csak akkor terheljük a böngészőt eseményfigyeléssel, ha nyitva van a kapszula
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside); // Direkt érintőképernyőre
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  return (
+    <div 
+      ref={pillRef}
+      // Asztali gép (Egér logikája)
+      onMouseEnter={() => setIsOpen(true)} 
+      onMouseLeave={() => setIsOpen(false)}
+      // Mobil (Érintés logikája)
+      onClick={() => setIsOpen(true)} 
+      style={{ 
+        display: 'flex', alignItems: 'center', 
+        background: th.id === 'day' ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.05)', 
+        borderRadius: 99, padding: 4, gap: isOpen ? 4 : 0,
+        border: `1px solid ${th.border}`,
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', // Az eredeti Apple-stílusú rugós animáció
+        cursor: 'pointer', height: 40
+      }}
+    >
+      {formats.map(fmt => {
+        const isActive = exportFormat === fmt;
+        const isVisible = isActive || isOpen;
+
+        return (
+          <button
+            key={fmt}
+            onClick={(e) => { 
+              e.stopPropagation(); // Ez nagyon fontos: megakadályozza, hogy a szülő div azonnal újra kinyissa!
+              setExportFormat(fmt); 
+              setIsOpen(false); // Kiválasztás után elegánsan visszazár
+            }}
+            style={{
+              opacity: isVisible ? 1 : 0,
+              maxWidth: isVisible ? 80 : 0, // A varázslat: 0-ról nő meg a szélessége
+              padding: isVisible ? '0 14px' : '0',
+              height: '100%', margin: 0, border: 'none', borderRadius: 99,
+              background: isActive ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
+              color: isActive ? th.t1 : th.t2,
+              boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
+              fontWeight: isActive ? 700 : 500, cursor: 'pointer',
+              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              fontFamily: "'Inter', sans-serif", fontSize: 11, letterSpacing: '.04em', 
+              textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden'
+            }}
+          >
+            {fmt}
+          </button>
+        );
+      })}
+      
+      {/* Kinyitó (chevron) indikátor, ami finoman eltűnik, ha nyitva van a kapszula */}
+      <div style={{
+        maxWidth: isOpen ? 0 : 20, opacity: isOpen ? 0 : 0.5, overflow: 'hidden',
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <span style={{ fontSize: 10, color: th.t1, marginLeft: 2, marginRight: 8 }}>⏷</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ KOPPINTÁSRA NYÍLÓ OKOSKAPSZULA (SMART EXPORT PILL) ═══════════════ */
+function SmartExportPill({ onExport, th, color }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const pillRef = useRef(null);
+  const formats = ['csv', 'json', 'xml'];
+
+  // Biztonsági háló: Bezárás, ha bárhova máshova kattintasz/koppintasz
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pillRef.current && !pillRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div 
+      ref={pillRef}
+      style={{ 
+        display: 'flex', alignItems: 'center', 
+        // Zárt állapotban a szenzor saját színe, nyitottan egy halvány üveghatás
+        background: isOpen ? (th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.08)') : color, 
+        borderRadius: 99, padding: 4, gap: isOpen ? 6 : 0,
+        border: `1px solid ${isOpen ? th.border : 'transparent'}`,
+        boxShadow: isOpen ? 'none' : `0 4px 12px ${color}40`,
+        transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)', 
+        height: 44,
+        cursor: isOpen ? 'default' : 'pointer'
+      }}
+      onClick={() => { if (!isOpen) setIsOpen(true); }}
+    >
+      {/* ── Nyitó felirat / Bezáró ikon ── */}
+      <div
+        onClick={(e) => { if (isOpen) { e.stopPropagation(); setIsOpen(false); } }}
+        style={{
+          padding: isOpen ? '0 10px' : '0 20px', 
+          color: isOpen ? th.t2 : '#ffffff',
+          fontWeight: 600, fontFamily: "'Inter', sans-serif", fontSize: 13,
+          display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          cursor: 'pointer'
+        }}
+      >
+        <span style={{ 
+          transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', 
+          transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)', 
+          fontSize: 16, display: 'flex', alignItems: 'center' 
+        }}>
+          {isOpen ? '×' : '↓'}
+        </span>
+        <span style={{ 
+          display: 'inline-block', overflow: 'hidden', 
+          maxWidth: isOpen ? 0 : 120, opacity: isOpen ? 0 : 1, 
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)' 
+        }}>Letöltés</span>
+      </div>
+
+      {/* ── Szétnyíló opciók ── */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', gap: isOpen ? 4 : 0, overflow: 'hidden',
+        maxWidth: isOpen ? 250 : 0, opacity: isOpen ? 1 : 0,
+        transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
+      }}>
+        {formats.map(fmt => (
+          <button
+            key={fmt}
+            onClick={(e) => { e.stopPropagation(); onExport(fmt); setIsOpen(false); }}
+            style={{
+              padding: '0 14px', height: '36px', border: 'none', borderRadius: 99,
+              background: th.id === 'day' ? '#ffffff' : th.card,
+              color: th.t1, boxShadow: th.id === 'day' ? '0 2px 8px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.3)',
+              fontWeight: 700, cursor: 'pointer',
+              fontFamily: "'Inter', sans-serif", fontSize: 11, letterSpacing: '.04em', 
+              textTransform: 'uppercase', whiteSpace: 'nowrap',
+              transition: 'transform 0.1s',
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            {fmt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ PREMIUM IOS EXPORT MENU ═══════════════ */
+function ExportMenu({ onExport, th, color }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Bezárja a menüt, ha bárhova máshova kattintasz a képernyőn
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  const handleSelect = (fmt) => {
+    onExport(fmt); // Átadjuk a formátumot a szülő komponensnek (pl. CSV)
+    setIsOpen(false); // Visszazárjuk a menüt
+  };
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }} ref={menuRef}>
+      
+      {/* ── Fő Letöltés Gomb (Minden oldalon a saját színével) ── */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: '10px 24px', background: color, color: '#FFFFFF', border: 'none',
+          borderRadius: 10, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13,
+          transition: 'background 0.2s, transform 0.1s cubic-bezier(0.16, 1, 0.3, 1)', 
+          display: 'flex', alignItems: 'center', gap: 8,
+          boxShadow: `0 4px 12px ${color}40`
+        }}
+        // Finom "benyomódás" effektus kattintáskor
+        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
+        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+      >
+        ↓ Adatok Letöltése
+      </button>
+
+      {/* ── Lebegő Menü (Popover) ── */}
+      <div style={{
+        position: 'absolute', bottom: '100%', right: 0, marginBottom: 12,
+        background: th.id === 'day' ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)',
+        backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+        border: `1px solid ${th.border}`, borderRadius: 16, padding: 6,
+        boxShadow: th.id === 'day' ? '0 10px 40px rgba(0,0,0,0.1)' : '0 20px 40px rgba(0,0,0,0.4)',
+        display: 'flex', flexDirection: 'column', gap: 4, minWidth: 170,
+        // Az animáció varázslata: lentről-jobbról tágul ki (scale) és úszik be (translateY)
+        opacity: isOpen ? 1 : 0, 
+        transform: isOpen ? 'translateY(0) scale(1)' : 'translateY(10px) scale(0.95)',
+        transformOrigin: 'bottom right',
+        pointerEvents: isOpen ? 'auto' : 'none', 
+        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        zIndex: 100
+      }}>
+        {[
+          { id: 'csv', icon: '📄', label: 'CSV formátum' },
+          { id: 'json', icon: '📦', label: 'JSON formátum' },
+          { id: 'xml', icon: '🌐', label: 'XML formátum' }
+        ].map(fmt => (
+          <button
+            key={fmt.id}
+            onClick={() => handleSelect(fmt.id)}
+            style={{
+              background: 'transparent', color: th.t1,
+              padding: '10px 14px', border: 'none', borderRadius: 10, textAlign: 'left',
+              cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
+              transition: 'background 0.2s', display: 'flex', alignItems: 'center', gap: 10
+            }}
+            // Hover állapot a menüpontokon
+            onMouseEnter={e => e.currentTarget.style.background = th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.06)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{ fontSize: 16, filter: th.id === 'day' ? 'none' : 'brightness(1.5)' }}>{fmt.icon}</span>
+            {fmt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════ SENSOR LAYOUT (DRY ARCHITEKTÚRA) ═══════════════ */
 function SensorLayout({ title, icon, color, th, show, children }) {
   return (
     <div className="page-container">
       <header style={{ marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: th.hLive, flexShrink: 0, animation: 'live-pulse 2s infinite ease-in-out' }} />
-          <span style={{ ...ui, fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: th.hLive, fontWeight: 600 }}>Frissítés · 15 percenként</span>
-        </div>
+        
+        {/* Innen tűnt el a régi zöld pötty és a felirat! */}
+        
         <h1 style={{ ...ui, fontSize: 32, fontWeight: 700, color: th.hTitle, margin: 0, display: 'flex', alignItems: 'center', gap: 12, letterSpacing: '-0.02em' }}>
           <span style={{ color }}>{icon}</span> {title} Analízis
         </h1>
@@ -640,10 +1321,15 @@ function GenericSensorPage({ title, value, unit, color, icon, th }) {
   );
 }
 
-/* ═══════════════ TEMPERATURE PAGE ═══════════════ */
+/* ═══════════════ TEMPERATURE PAGE (GHOSTING UPDATE) ═══════════════ */
 function TemperaturePage({ th, addToast }) {
   const [show, setShow] = useState(false);
-  const [range, setRange] = useState('1d');
+  
+  // 1. A VARÁZSLAT: Kettéválasztjuk a gombot és az adatot!
+  const [displayRange, setDisplayRange] = useState('1d');   // Ezt mutatja a grafikon (késik)
+  const [selectedRange, setSelectedRange] = useState('1d'); // Ezt mutatja a gomb (azonnali)
+  const [isFetching, setIsFetching] = useState(false);      // Ez kapcsolja a Ghosting effektust
+
   const [activeBtn, setActiveBtn] = useState(null);
   const [exportFormat, setExportFormat] = useState('csv');
 
@@ -653,7 +1339,22 @@ function TemperaturePage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = TEMP_DATASETS[range];
+  // 2. A "Nehéz Lekérdezés" szimulátor
+  const handleRangeChange = (newRange) => {
+    if (newRange === displayRange) return;
+    
+    setSelectedRange(newRange); // A gomb azonnal aktív lesz
+    setIsFetching(true);        // Bekapcsoljuk az elmosódást a grafikonon
+
+    // Szimuláljuk, hogy 1.2 másodpercig tart betölteni az új adatokat az InfluxDB-ből
+    setTimeout(() => {
+      setDisplayRange(newRange); // Megjött az adat, frissítjük a grafikont
+      setIsFetching(false);      // Kikapcsoljuk a szellemképet
+    }, 1200);
+  };
+
+  // Az adatok mostantól a displayRange-hez (a lemaradó, valós adathoz) igazodnak
+  const data = TEMP_DATASETS[displayRange];
   const temps = data.map(d => d.temp);
   const minT = Math.min(...temps);
   const maxT = Math.max(...temps);
@@ -665,9 +1366,9 @@ function TemperaturePage({ th, addToast }) {
   const trendDiff = parseFloat((currentT - prevT).toFixed(1));
   const intervalLabels = { '1h': '15p', '1d': 'ó', '1w': '6ó', '1mo': 'nap' };
 
-  /* Meteorológiai trend skála (sebesség alapú) */
+  /* Meteorológiai trend skála */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[range])).toFixed(2));
+  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 1.0) { trendColor = '#EF4444'; trendLabel = 'Gyorsan melegedő'; trendArrow = '⇡'; }
@@ -685,32 +1386,32 @@ function TemperaturePage({ th, addToast }) {
 
   /* Fájlgenerátor funkciók */
   const downloadCSV = () => {
-    const rows = ['Időpont,Hőmérséklet (°C)', ...data.map(d => `${d.t},${d.temp}`)].join('\n');
+    const rows = ['Időpont,Fényerő (Lux),UV Index', ...data.map(d => `${d.t},${d.lux},${d.uv}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, unit: '°C', records: data };
+    const payload = { exportedAt: new Date().toISOString(), range, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n    <unit>°C</unit>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
-      xml += `    <record>\n      <time>${d.t}</time>\n      <value>${d.temp}</value>\n    </record>\n`;
+      xml += `    <record>\n      <time>${d.t}</time>\n      <lux>${d.lux}</lux>\n      <uv>${d.uv}</uv>\n    </record>\n`;
     });
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -736,12 +1437,13 @@ function TemperaturePage({ th, addToast }) {
     );
   };
 
+  // A gombok stílusa már a selectedRange (azonnali) állapotra reagál
   const btnStyle = (id) => ({
     padding: '5px 14px', borderRadius: 99, cursor: 'pointer',
-    background: range === id ? (th.id === 'day' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.10)') : activeBtn === id ? (th.id === 'day' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.04)') : 'transparent',
-    border: range === id ? `1px solid ${th.border}` : '1px solid transparent',
-    color: range === id ? th.p : th.t2,
-    ...ui, fontSize: 12, fontWeight: range === id ? 600 : 400, transition: 'all 0.2s',
+    background: selectedRange === id ? (th.id === 'day' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.10)') : activeBtn === id ? (th.id === 'day' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.04)') : 'transparent',
+    border: selectedRange === id ? `1px solid ${th.border}` : '1px solid transparent',
+    color: selectedRange === id ? th.p : th.t2,
+    ...ui, fontSize: 12, fontWeight: selectedRange === id ? 600 : 400, transition: 'all 0.2s',
   });
 
   return (
@@ -750,7 +1452,6 @@ function TemperaturePage({ th, addToast }) {
       {/* ── BAL OLDAL (8 oszlop): DIAGRAM + EXPORT KÁRTYA ── */}
       <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: 20 }}>
         
-        {/* DIAGRAM KÁRTYA */}
         <Card show={show} delay={80} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <div>
@@ -765,14 +1466,21 @@ function TemperaturePage({ th, addToast }) {
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {rangeButtons.map(({ id, label }) => (
-                <button key={id} style={btnStyle(id)} onClick={() => setRange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
+                <button key={id} style={btnStyle(id)} onClick={() => handleRangeChange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
                   {label}
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          {/* 3. A GHOSTING EFFEKTUS: Amikor tölt, bebluröl és megjelenik a fénycsóva! */}
+          <div style={{ 
+            flex: 1, width: '100%', minHeight: 280, position: 'relative',
+            filter: isFetching ? 'blur(4px) grayscale(20%)' : 'blur(0px) grayscale(0%)',
+            opacity: isFetching ? 0.6 : 1,
+            transition: 'filter 0.5s ease, opacity 0.5s ease',
+            pointerEvents: isFetching ? 'none' : 'auto'
+          }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
                 <defs>
@@ -790,9 +1498,24 @@ function TemperaturePage({ th, addToast }) {
                 <Area type="monotone" dataKey="temp" stroke={th.w} strokeWidth={2.5} fill="url(#gTempFill)" dot={false} activeDot={{ r: 5, fill: th.w, stroke: th.id === 'day' ? '#fff' : '#0a1426', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
+
+            {/* A Láthatatlan Szellemkép-csóva, ami csak isFetching alatt jelenik meg */}
+            {isFetching && (
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: 12,
+                backgroundImage: `linear-gradient(110deg, transparent 30%, ${th.id === 'day' ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.1)'} 50%, transparent 70%)`,
+                backgroundSize: '200% 100%',
+                animation: 'skeleton-shimmer 1.5s linear infinite',
+                zIndex: 10
+              }} />
+            )}
           </div>
 
-          <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          {/* Az alsó sáv is ghostol */}
+          <div style={{ 
+            display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`,
+            opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s'
+          }}>
             {[[th.w, 'Hőmérséklet (°C)'], [th.p, `Átlag (${avgT}°C)`]].map(([col, lbl]) => (
               <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 20, height: 2.5, background: col, borderRadius: 99 }} />
@@ -800,39 +1523,22 @@ function TemperaturePage({ th, addToast }) {
               </div>
             ))}
             <div style={{ marginLeft: 'auto', ...tech, fontSize: 11, color: th.t3 }}>
-              {data.length} mérési pont · {range === '1h' ? '15 perces' : range === '1d' ? 'óránkénti' : range === '1w' ? '6 órás' : 'napi'} felbontás
+              {data.length} mérési pont · {displayRange === '1h' ? '15 perces' : displayRange === '1d' ? 'óránkénti' : displayRange === '1w' ? '6 órás' : 'napi'} felbontás
             </div>
           </div>
         </Card>
 
-        {/* EXPORT KÁRTYA */}
+        {/* ... (Az alatta lévő export kártya és a jobb oldali oszlop ugyanaz marad, 
+            csak megkapják az új displayRange változókat) ... */}
+        
         <Card show={show} delay={260} t={th}>
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
+              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
             </p>
-            
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 220 }}>
-                {['CSV', 'JSON', 'XML'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500,
-                      cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
               <button onClick={handleExport} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
                 ↓ Letöltés
               </button>
@@ -844,10 +1550,9 @@ function TemperaturePage({ th, addToast }) {
       {/* ── JOBB OLDAL (4 oszlop): TREND + STATISZTIKA KÁRTYÁK ── */}
       <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: 20 }}>
         
-        {/* Trend Card */}
         <Card show={show} delay={140} t={th}>
           <Lbl t={th}>Trend & Változási Sebesség</Lbl>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
             <div style={{
               width: 64, height: 64, borderRadius: 20,
               background: ratePerHour >= -0.15 && ratePerHour <= 0.15 ? `${th.t3}22` : `${trendColor}22`,
@@ -861,11 +1566,11 @@ function TemperaturePage({ th, addToast }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}°C
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[range]} óta
+                az előző {lookback}× {intervalLabels[displayRange]} óta
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
             <div>
               <div style={{ ...ui, fontSize: 11, color: th.lbl, letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 3 }}>Óránkénti ráta</div>
               <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: trendColor }}>
@@ -879,11 +1584,10 @@ function TemperaturePage({ th, addToast }) {
           </div>
         </Card>
 
-        {/* JAVÍTVA: flex: 1 és justifyContent: space-between hozzáadva a tökéletes igazodásért */}
         <Card show={show} delay={200} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <Lbl t={th}>Statisztikák & Komfortindex</Lbl>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
               {[
                 { label: 'Minimum', value: `${minT}°C`, color: '#0EA5E9', icon: '▼' },
                 { label: 'Maximum', value: `${maxT}°C`, color: '#EF4444', icon: '▲' },
@@ -905,7 +1609,7 @@ function TemperaturePage({ th, addToast }) {
             </div>
           </div>
           
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 11, color: th.t3, marginBottom: 6 }}>
               <span>{minT}°C</span>
               <span style={{ color: th.t2 }}>Jelenlegi: {currentT}°C</span>
@@ -942,11 +1646,11 @@ const humData1mo = Array.from({ length: 30 }, (_, i) => ({ t: `${i+1}.`, hum: Ma
 const HUMIDITY_DATASETS = { '1h': humData1h, '1d': humData1d, '1w': humData1w, '1mo': humData1mo };
 
 /* ═══════════════ HUMIDITY PAGE ═══════════════ */
-function HumidityPage({ th }) {
+function HumidityPage({ th, addToast }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
-  const [exportFormat, setExportFormat] = useState('csv');
+  const [exportFormat, setExportFormat] = useState('csv'); // <-- Visszakerült a state!
 
   useEffect(() => {
     setShow(false);
@@ -980,7 +1684,7 @@ function HumidityPage({ th }) {
   /* Komfortindex logika */
   let comfortLabel, comfortColor;
   if (currentH < 30) { comfortLabel = 'Túl száraz'; comfortColor = '#EA580C'; }
-  else if (currentH <= 60) { comfortLabel = 'Ideális'; comfortColor = '#10B981'; } // Zöld
+  else if (currentH <= 60) { comfortLabel = 'Ideális'; comfortColor = '#10B981'; }
   else { comfortLabel = 'Fülledt / Magas'; comfortColor = '#0284C7'; }
 
   const rangeButtons = [
@@ -1021,10 +1725,13 @@ function HumidityPage({ th }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  // Eredeti letöltés funkció visszarakva
   const handleExport = () => {
     if (exportFormat === 'csv') downloadCSV();
     else if (exportFormat === 'json') exportJSON();
     else if (exportFormat === 'xml') exportXML();
+    
+    addToast(`A(z) ${exportFormat.toUpperCase()} adatcsomag letöltése elindult.`);
   };
 
   const HumTip = ({ active, payload, label }) => {
@@ -1036,7 +1743,6 @@ function HumidityPage({ th }) {
           <span style={{ ...tech, fontSize: 22, fontWeight: 700, color: th.p }}>{payload[0]?.value?.toFixed(1)}</span>
           <span style={{ ...ui, fontSize: 13, color: th.t2 }}>%</span>
         </div>
-        {/* JAVÍTVA: minT/maxT helyett minH/maxH */}
         {payload[0]?.value <= minH && <div style={{ ...ui, fontSize: 10, color: '#F59E0B', marginTop: 4 }}>▼ Minimum</div>}
         {payload[0]?.value >= maxH && <div style={{ ...ui, fontSize: 10, color: '#0284C7', marginTop: 4 }}>▲ Maximum</div>}
       </div>
@@ -1091,7 +1797,6 @@ function HumidityPage({ th }) {
                 </defs>
                 <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
-                {/* JAVÍTVA: Fix 0-100% Domain a páratartalomnak */}
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
                 <Tooltip content={<HumTip />} cursor={{ stroke: `${th.p}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
                 <ReferenceLine y={avgH} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `Átl. ${avgH}%`, position: 'insideTopRight', fill: th.t2, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", dy: -6 }} />
@@ -1122,28 +1827,14 @@ function HumidityPage({ th }) {
             </p>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 220 }}>
-                {['CSV', 'JSON', 'XML'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500,
-                      cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
+              
+              {/* EREDETI FormatPill (már felokosítva érintésre) */}
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
 
               <button onClick={handleExport} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
                 ↓ Letöltés
               </button>
+
             </div>
           </div>
         </Card>
@@ -1190,7 +1881,6 @@ function HumidityPage({ th }) {
           <div>
             <Lbl t={th}>Statisztikák & Levegőminőség</Lbl>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {/* JAVÍTVA: minT/maxT helyett minH/maxH */}
               {[
                 { label: 'Minimum (Időszak)', value: `${minH}%`, color: th.t1, icon: '▼' },
                 { label: 'Maximum (Időszak)', value: `${maxH}%`, color: th.t1, icon: '▲' },
@@ -1248,7 +1938,7 @@ const presData1mo = Array.from({ length: 30 }, (_, i) => ({ t: `${i+1}.`, pres: 
 const PRESSURE_DATASETS = { '1h': presData1h, '1d': presData1d, '1w': presData1w, '1mo': presData1mo };
 
 /* ═══════════════ PRESSURE PAGE ═══════════════ */
-function PressurePage({ th }) {
+function PressurePage({ th, addToast }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -1331,6 +2021,8 @@ function PressurePage({ th }) {
     if (exportFormat === 'csv') downloadCSV();
     else if (exportFormat === 'json') exportJSON();
     else if (exportFormat === 'xml') exportXML();
+    
+    addToast(`A(z) ${exportFormat.toUpperCase()} adatcsomag letöltése elindult.`);
   };
 
   const PresTip = ({ active, payload, label }) => {
@@ -1426,25 +2118,7 @@ function PressurePage({ th }) {
             </p>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 220 }}>
-                {['CSV', 'JSON', 'XML'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500,
-                      cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
               <button onClick={handleExport} style={{ padding: '10px 24px', background: th.v, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
                 ↓ Letöltés
               </button>
@@ -1616,7 +2290,7 @@ const genLightData = () => {
 const BRIGHTNESS_DATASETS = genLightData();
 
 /* ═══════════════ BRIGHTNESS & UV PAGE (GÖRGETŐS NÉZET + DINAMIKUS ÉGI ÍV) ═══════════════ */
-function BrightnessPage({ th }) {
+function BrightnessPage({ th, addToast }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -1750,12 +2424,34 @@ function BrightnessPage({ th }) {
     const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
   const exportJSON = () => {
     const payload = { exportedAt: new Date().toISOString(), range, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportXML = () => {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
+    xml += `  <records>\n`;
+    data.forEach(d => {
+      xml += `    <record>\n      <time>${d.t}</time>\n      <lux>${d.lux}</lux>\n      <uv>${d.uv}</uv>\n    </record>\n`;
+    });
+    xml += `  </records>\n</telemetry>`;
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.xml`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleExport = () => {
+    if (exportFormat === 'csv') downloadCSV();
+    else if (exportFormat === 'json') exportJSON();
+    else if (exportFormat === 'xml') exportXML();
+    addToast(`A(z) ${exportFormat.toUpperCase()} adatcsomag letöltése elindult.`);
   };
 
   const LuxTip = ({ active, payload, label }) => {
@@ -2028,24 +2724,8 @@ function BrightnessPage({ th }) {
               A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Lux és UVI) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 160 }}>
-                {['CSV', 'JSON'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500, cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => { if(exportFormat === 'csv') downloadCSV(); else exportJSON(); }} style={{ padding: '10px 24px', background: th.t1, color: th.card, border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
+              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.t1, color: th.card, border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
                 ↓ Letöltés
               </button>
             </div>
@@ -2104,7 +2784,7 @@ const genRainData = () => {
 const RAIN_DATASETS = genRainData();
 
 /* ═══════════════ PRECIPITATION PAGE (CSAPADÉK) ═══════════════ */
-function PrecipitationPage({ th }) {
+function PrecipitationPage({ th, addToast }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1w'); // Alapértelmezetten 1 hét, hogy lássunk is esőt
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2159,7 +2839,7 @@ function PrecipitationPage({ th }) {
     { id: '1mo', label: '1 Hónap' },
   ];
 
-  /* ─── FÁJL GENERÁTOROK ÉS TOOLTIPEK ─── */
+  /* Fájlgenerátor funkciók */
   const downloadCSV = () => {
     const rows = ['Időpont,Intenzitás (mm/h),Összeg (mm)', ...data.map(d => `${d.t},${d.intensity},${d.acc}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
@@ -2167,12 +2847,34 @@ function PrecipitationPage({ th }) {
     const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
   const exportJSON = () => {
     const payload = { exportedAt: new Date().toISOString(), range, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportXML = () => {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
+    xml += `  <records>\n`;
+    data.forEach(d => {
+      xml += `    <record>\n      <time>${d.t}</time>\n      <intensity>${d.intensity}</intensity>\n      <accumulation>${d.acc}</accumulation>\n    </record>\n`;
+    });
+    xml += `  </records>\n</telemetry>`;
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.xml`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleExport = () => {
+    if (exportFormat === 'csv') downloadCSV();
+    else if (exportFormat === 'json') exportJSON();
+    else if (exportFormat === 'xml') exportXML();
+    addToast(`A(z) ${exportFormat.toUpperCase()} adatcsomag letöltése elindult.`);
   };
 
   const IntTip = ({ active, payload, label }) => {
@@ -2394,24 +3096,8 @@ function PrecipitationPage({ th }) {
               A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Intenzitás és Összeg) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 160 }}>
-                {['CSV', 'JSON'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500, cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => { if(exportFormat === 'csv') downloadCSV(); else exportJSON(); }} style={{ padding: '10px 24px', background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
+              <button onClick={handleExport} style={{ padding: '10px 24px', background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
                 ↓ Letöltés
               </button>
             </div>
@@ -2487,7 +3173,7 @@ const genRoseData = () => {
 const ROSE_DATA = genRoseData();
 
 /* ═══════════════ WIND PAGE (SZÉLADATOK) ═══════════════ */
-function WindPage({ th }) {
+function WindPage({ th, addToast}) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2519,6 +3205,7 @@ function WindPage({ th }) {
     { id: '1mo', label: '1 Hónap' },
   ];
 
+  /* Fájlgenerátor funkciók */
   const downloadCSV = () => {
     const rows = ['Időpont,Szélsebesség (km/h),Lökés (km/h)', ...data.map(d => `${d.t},${d.speed},${d.gust}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
@@ -2526,12 +3213,34 @@ function WindPage({ th }) {
     const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
   const exportJSON = () => {
     const payload = { exportedAt: new Date().toISOString(), range, windDirectionDeg: R.windDir, windDirectionLabel: windLabel, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportXML = () => {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n    <windDirectionDeg>${R.windDir}</windDirectionDeg>\n    <windDirectionLabel>${windLabel}</windDirectionLabel>\n  </metadata>\n`;
+    xml += `  <records>\n`;
+    data.forEach(d => {
+      xml += `    <record>\n      <time>${d.t}</time>\n      <speed>${d.speed}</speed>\n      <gust>${d.gust}</gust>\n    </record>\n`;
+    });
+    xml += `  </records>\n</telemetry>`;
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.xml`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleExport = () => {
+    if (exportFormat === 'csv') downloadCSV();
+    else if (exportFormat === 'json') exportJSON();
+    else if (exportFormat === 'xml') exportXML();
+    addToast(`A(z) ${exportFormat.toUpperCase()} adatcsomag letöltése elindult.`);
   };
 
   const SpeedTip = ({ active, payload, label }) => {
@@ -2705,24 +3414,8 @@ function WindPage({ th }) {
               A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Szélsebesség, Lökés, Irány) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 160 }}>
-                {['CSV', 'JSON'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500, cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => { if (exportFormat === 'csv') downloadCSV(); else exportJSON(); }} style={{ padding: '10px 24px', background: th.a, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
+              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.a, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
                 ↓ Letöltés
               </button>
             </div>
@@ -2736,27 +3429,21 @@ function WindPage({ th }) {
 
 
 /* ═══════════════ DASHBOARD MAIN CONTENT ═══════════════ */
-function DashboardContent({ phase, th, clock, isRaining, isWindy }) {
+function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage, appLoaded, liveTemp }) {
   const [show, setShow] = useState(false);
-  const [dispT, setDispT] = useState('0.0');
   const [rangeW, setRangeW] = useState(0);
 
   useEffect(() => {
-    setShow(false); setDispT('0.0'); setRangeW(0);
+    setShow(false); 
+    setRangeW(0); 
     const t = setTimeout(() => setShow(true), 90);
     return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
     if (!show) return;
-    const end = R.temp, dur = 2400, t0 = Date.now();
-    const tick = () => {
-      const p = Math.min((Date.now() - t0) / dur, 1), e = 1 - Math.pow(1 - p, 3);
-      setDispT((e * end).toFixed(1));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    setTimeout(() => setRangeW(((R.temp - R.tempMin) / (R.tempMax - R.tempMin)) * 100), 400);
+    const t = setTimeout(() => setRangeW(((R.temp - R.tempMin) / (R.tempMax - R.tempMin)) * 100), 400);
+    return () => clearTimeout(t);
   }, [show]);
 
   const metrics = [
@@ -2792,10 +3479,6 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy }) {
     <div className="page-container">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: th.hLive, flexShrink: 0, animation: 'live-pulse 2s infinite ease-in-out' }} />
-            <span style={{ ...ui, fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: th.hLive, fontWeight: 600 }}>Live · IoT Mérőállomás</span>
-          </div>
           <h1 style={{ ...ui, fontSize: 'clamp(22px,3.2vw,36px)', fontWeight: 700, color: th.hTitle, margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em' }}>Telemetriai Dashboard</h1>
           <p style={{ ...ui, fontSize: 13, color: th.hSub, margin: '6px 0 0', opacity: 0.85 }}>Hajdúböszörmény · Kliensoldali Vezérlőpult v1.0</p>
         </div>
@@ -2805,71 +3488,117 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy }) {
         </div>
       </header>
 
+      <div style={{ marginBottom: 24 }}>
+        <SmartCapsule th={th} show={show} phase={phase} isRaining={isRaining} isWindy={isWindy} />
+      </div>
+
       <div className='mg' style={{ display: 'grid', gridTemplateColumns: 'repeat(12,1fr)', gap: 20 }}>
 
-        <Card show={show} delay={80} t={th} className='gc4' style={{ gridColumn: 'span 4', position: 'relative', overflow: 'hidden' }}>
+        {/* ── 1. HŐMÉRSÉKLET KÁRTYA ── */}
+        <Card show={show} delay={80} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
           <Lbl t={th}>Hőmérséklet</Lbl>
-          <div style={{ ...tech, fontWeight: 600, fontSize: 'clamp(54px,5.5vw,82px)', color: th.w, lineHeight: 1, marginTop: 4, letterSpacing: '-0.04em' }}>
-            {dispT}<span style={{ ...ui, fontSize: '.4em', color: th.t2, fontWeight: 300, marginLeft: 2, verticalAlign: 'super', letterSpacing: 0 }}>°C</span>
-          </div>
-          <div style={{ display: 'flex', gap: 24, marginTop: 18, flexWrap: 'wrap' }}>
-            {[['Hőérzet', R.feelsLike + '°C', th.w], ['Harmatpont', R.dewPoint + '°C', th.p]].map(([l, v, c]) => (
-              <div key={l}>
-                <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 2 }}>{l}</div>
-                <div style={{ ...tech, fontSize: 15, color: th.t1, fontWeight: 500 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, ...ui, fontSize: 11, color: th.t2 }}>
-              <span>Min {R.tempMin}°C</span>
-              <span>Max {R.tempMax}°C</span>
-            </div>
-            <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99, background: `linear-gradient(90deg,${th.p},${th.w})`, width: `${rangeW}%`, transition: 'width 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
-              <div style={{ position: 'absolute', top: '50%', left: `${rangeW}%`, transform: 'translate(-50%,-50%)', width: 12, height: 11, borderRadius: '50%', background: th.w, boxShadow: `0 0 10px ${th.w}`, transition: 'left 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
-            </div>
-          </div>
-        </Card>
-
-        <Card show={show} delay={140} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <Lbl t={th}>Aktuális Állapot</Lbl>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
-              <div style={{ fontSize: 44, lineHeight: 1 }}>
-                {isRaining ? '🌧' : (phase === 'night' || phase === 'evening') ? '🌙' : (phase === 'dawn' || phase === 'sunset') ? '🌅' : '⛅'}
-              </div>
-              <div>
-                <div style={{ ...ui, fontSize: 18, fontWeight: 600, color: th.t1, letterSpacing: '-0.01em' }}>
-                  {isRaining ? 'Csapadékos Idő' : (phase === 'night' || phase === 'evening') ? 'Tiszta Éjszaka' : (phase === 'dawn') ? 'Napfelkelte' : (phase === 'sunset') ? 'Naplemente' : 'Enyhén Felhős'}
+          <div style={{ flex: 1, minHeight: 180 }}>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={0} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={0} skeleton={
+              <>
+                <SkeletonBlock w="60%" h={64} br={16} th={th} style={{ marginTop: 4 }} />
+                <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>
+                  <div><SkeletonBlock w={50} h={12} br={4} th={th} style={{ marginBottom: 6 }} /><SkeletonBlock w={70} h={20} br={6} th={th} /></div>
+                  <div><SkeletonBlock w={50} h={12} br={4} th={th} style={{ marginBottom: 6 }} /><SkeletonBlock w={70} h={20} br={6} th={th} /></div>
                 </div>
-                <div style={{ ...ui, fontSize: 13, color: th.t2, marginTop: 2 }}>Mérési folyamat stabil</div>
+                <SkeletonBlock w="100%" h={6} br={99} th={th} style={{ marginTop: 34 }} />
+              </>
+            }>
+              <div style={{ ...tech, fontWeight: 600, fontSize: 'clamp(54px,5.5vw,82px)', color: th.w, lineHeight: 1, marginTop: 4, letterSpacing: '-0.04em' }}>
+                <OdometerNumber value={liveTemp} />
+                <span style={{ ...ui, fontSize: '.4em', color: th.t2, fontWeight: 300, marginLeft: 2, verticalAlign: 'super', letterSpacing: 0 }}>°C</span>
               </div>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
-            {[{ l: 'Látótávolság', v: R.visibility, u: 'km' }, { l: 'Csapadék', v: R.precipitation, u: 'mm/h' }].map(({ l, v, u }) => (
-              <div key={l} style={{ background: th.id==='day'?'rgba(15,23,42,0.02)':'rgba(255,255,255,0.02)', borderRadius: 16, padding: '12px 14px', border: `1px solid ${th.border}` }}>
-                <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 4 }}>{l}</div>
-                <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: th.t1 }}>{v}<span style={{ ...ui, fontSize: 12, color: th.t2, marginLeft: 2, fontWeight: 400 }}>{u}</span></div>
+              <div style={{ display: 'flex', gap: 24, marginTop: 18, flexWrap: 'wrap' }}>
+                {[['Hőérzet', R.feelsLike + '°C', th.w], ['Harmatpont', R.dewPoint + '°C', th.p]].map(([l, v, c]) => (
+                  <div key={l}>
+                    <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 2 }}>{l}</div>
+                    <div style={{ ...tech, fontSize: 15, color: th.t1, fontWeight: 500 }}>{v}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+              <div style={{ marginTop: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, ...ui, fontSize: 11, color: th.t2 }}>
+                  <span>Min {R.tempMin}°C</span>
+                  <span>Max {R.tempMax}°C</span>
+                </div>
+                <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99, background: `linear-gradient(90deg,${th.p},${th.w})`, width: `${rangeW}%`, transition: 'width 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
+                  <div style={{ position: 'absolute', top: '50%', left: `${rangeW}%`, transform: 'translate(-50%,-50%)', width: 12, height: 11, borderRadius: '50%', background: th.w, boxShadow: `0 0 10px ${th.w}`, transition: 'left 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
+                </div>
+              </div>
+            </SkeletonWrapper>
           </div>
         </Card>
 
+        {/* ── 2. AKTUÁLIS ÁLLAPOT KÁRTYA ── */}
+        <Card show={show} delay={140} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
+          <Lbl t={th}>Aktuális Állapot</Lbl>
+          <div style={{ flex: 1, minHeight: 180 }}>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={150} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={150} skeleton={
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 12 }}>
+                  <SkeletonBlock w={44} h={44} br="50%" th={th} />
+                  <div style={{ flex: 1 }}><SkeletonBlock w="70%" h={22} br={6} th={th} style={{ marginBottom: 8 }} /><SkeletonBlock w="40%" h={14} br={4} th={th} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'auto', paddingTop: 16 }}>
+                  <SkeletonBlock w="100%" h={64} br={16} th={th} /><SkeletonBlock w="100%" h={64} br={16} th={th} />
+                </div>
+              </div>
+            }>
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
+                  <div style={{ fontSize: 44, lineHeight: 1 }}>{isRaining ? '🌧' : (phase === 'night' || phase === 'evening') ? '🌙' : (phase === 'dawn' || phase === 'sunset') ? '🌅' : '⛅'}</div>
+                  <div>
+                    <div style={{ ...ui, fontSize: 18, fontWeight: 600, color: th.t1, letterSpacing: '-0.01em' }}>{isRaining ? 'Csapadékos Idő' : (phase === 'night' || phase === 'evening') ? 'Tiszta Éjszaka' : (phase === 'dawn') ? 'Napfelkelte' : (phase === 'sunset') ? 'Naplemente' : 'Enyhén Felhős'}</div>
+                    <div style={{ ...ui, fontSize: 13, color: th.t2, marginTop: 2 }}>Mérési folyamat stabil</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'auto', paddingTop: 16 }}>
+                  {[{ l: 'Látótávolság', v: R.visibility, u: 'km' }, { l: 'Csapadék', v: R.precipitation, u: 'mm/h' }].map(({ l, v, u }) => (
+                    <div key={l} style={{ background: th.id==='day'?'rgba(15,23,42,0.02)':'rgba(255,255,255,0.02)', borderRadius: 16, padding: '12px 14px', border: `1px solid ${th.border}` }}>
+                      <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 4 }}>{l}</div>
+                      <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: th.t1 }}>{v}<span style={{ ...ui, fontSize: 12, color: th.t2, marginLeft: 2, fontWeight: 400 }}>{u}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </SkeletonWrapper>
+          </div>
+        </Card>
+
+        {/* ── 3. A 4 KIS METRIKA ── */}
         <div className='mini2' style={{ gridColumn: 'span 4', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 12 }}>
           {metrics.map(({ label, value, unit, color, bar, icon }, i) => (
-            <Card key={label} show={show} delay={190 + i * 55} t={th} style={{ padding: 18 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Lbl t={th}>{label}</Lbl>
-                <span style={{ fontSize: 14, opacity: .5 }}>{icon}</span>
+            <Card key={label} show={show} delay={190 + i * 55} t={th} style={{ padding: '16px 14px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                <Lbl t={th} style={{ flex: 1, minWidth: 0, marginBottom: 4, paddingRight: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</Lbl>
+                <span style={{ fontSize: 14, opacity: .5, flexShrink: 0 }}>{icon}</span>
               </div>
-              <div style={{ ...tech, fontSize: 24, fontWeight: 600, color, lineHeight: 1, marginTop: 4, letterSpacing: '-0.02em' }}>{value}<span style={{ ...ui, fontSize: 12, color: th.t2, fontWeight: 400, marginLeft: 2 }}>{unit}</span></div>
-              <Bar3 pct={bar} color={color} show={show} delay={300 + i * 50} />
+              <div style={{ flex: 1, minHeight: 46 }}>
+                {/* LÉPÉSZETES IDŐZÍTÉS: delay dinamikusan generálva (300, 350, 400, 450ms) */}
+                <SkeletonWrapper isLoaded={appLoaded} delay={300 + i * 50} skeleton={
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
+                    <SkeletonBlock w="70%" h={28} br={6} th={th} style={{ marginTop: 2 }} />
+                    <SkeletonBlock w="100%" h={6} br={99} th={th} style={{ marginTop: 14 }} />
+                  </div>
+                }>
+                  <div style={{ ...tech, fontSize: 24, fontWeight: 600, color, lineHeight: 1, marginTop: 4, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {value}<span style={{ ...ui, fontSize: 12, color: th.t2, fontWeight: 400, marginLeft: 2 }}>{unit}</span>
+                  </div>
+                  <Bar3 pct={bar} color={color} show={show} delay={300 + i * 50} />
+                </SkeletonWrapper>
+              </div>
             </Card>
           ))}
         </div>
 
+        {/* ── 4. 24 ÓRÁS TRENDEK ── */}
         <Card show={show} delay={410} t={th} className='gc8' style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
             <div>
@@ -2886,78 +3615,103 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy }) {
             </div>
           </div>
           <div style={{ flex: 1, width: '100%', minHeight: 210 }}>
-            <ResponsiveContainer width='100%' height="100%">
-              <AreaChart data={hourly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
-                <defs>
-                  <linearGradient id='gT' x1='0' y1='0' x2='0' y2='1'>
-                    <stop offset='5%' stopColor={th.cT} stopOpacity={.15} />
-                    <stop offset='95%' stopColor={th.cT} stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id='gH' x1='0' y1='0' x2='0' y2='1'>
-                    <stop offset='5%' stopColor={th.cH} stopOpacity={.10} />
-                    <stop offset='95%' stopColor={th.cH} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
-                <XAxis dataKey='h' tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} interval={3} />
-                <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTip />} />
-                <Area type='monotone' dataKey='t' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} />
-                <Area type='monotone' dataKey='rh' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={500} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={500} skeleton={<SkeletonBlock w="100%" h="100%" br={12} th={th} />}>
+              <ResponsiveContainer width='100%' height="100%">
+                <AreaChart data={hourly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                  <defs>
+                    <linearGradient id='gT' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cT} stopOpacity={.15} /><stop offset='95%' stopColor={th.cT} stopOpacity={0} /></linearGradient>
+                    <linearGradient id='gH' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cH} stopOpacity={.10} /><stop offset='95%' stopColor={th.cH} stopOpacity={0} /></linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
+                  <XAxis dataKey='h' tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} interval={3} />
+                  <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTip />} />
+                  <Area type='monotone' dataKey='t' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} />
+                  <Area type='monotone' dataKey='rh' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </SkeletonWrapper>
           </div>
         </Card>
 
-        <Card show={show} delay={460} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        {/* ── 5. SZÉL KOMPASZ ── */}
+        <Card show={show} delay={460} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
           <Lbl t={th}>Széladatok</Lbl>
-          <WindCompass show={show} t={th} />
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 210 }}>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={600} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={600} skeleton={<SkeletonBlock w={180} h={180} br="50%" th={th} />}>
+              <WindCompass show={show} t={th} />
+            </SkeletonWrapper>
+          </div>
         </Card>
 
+        {/* ── 6. CSAPADÉK BAR CHART ── */}
         <Card show={show} delay={510} t={th} className='gc8' style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column' }}>
           <div style={{ marginBottom: 20 }}>
             <Lbl t={th}>Heti Csapadékmennyiség</Lbl>
             <div style={{ ...ui, fontSize: 14, fontWeight: 500, color: th.t1 }}>7 Napos Összesített Statisztika (mm)</div>
           </div>
           <div style={{ flex: 1, width: '100%', minHeight: 155 }}>
-            <ResponsiveContainer width='100%' height="100%">
-              <BarChart data={weekly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
-                <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
-                <XAxis dataKey='d' tick={{ fontFamily: "'Inter',sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
-                <Bar dataKey='mm' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={700} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={700} skeleton={<SkeletonBlock w="100%" h="100%" br={12} th={th} />}>
+              <ResponsiveContainer width='100%' height="100%">
+                <BarChart data={weekly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                  <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
+                  <XAxis dataKey='d' tick={{ fontFamily: "'Inter',sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
+                  <Bar dataKey='mm' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            </SkeletonWrapper>
           </div>
         </Card>
 
-        <Card show={show} delay={560} t={th} className='gc4' style={{ gridColumn: 'span 4' }}>
+        {/* ── 7. RENDSZER ÁLLAPOT ── */}
+        <Card show={show} delay={560} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
           <Lbl t={th}>Rendszer Állapot</Lbl>
-          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {status.map(({ label, value, color }, i) => (
-              <div key={label}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, ...ui, fontSize: 13 }}>
-                  <span style={{ color: th.t2 }}>{label}</span>
-                  <span style={{ ...tech, color, fontWeight: 600 }}>{value}%</span>
+          <div style={{ flex: 1, minHeight: 155 }}>
+            {/* LÉPÉSZETES IDŐZÍTÉS: delay={800} */}
+            <SkeletonWrapper isLoaded={appLoaded} delay={800} skeleton={
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', marginTop: 14 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {[1, 2, 3].map(i => (
+                    <div key={i}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}><SkeletonBlock w="40%" h={14} br={4} th={th} /><SkeletonBlock w="15%" h={14} br={4} th={th} /></div>
+                      <SkeletonBlock w="100%" h={6} br={99} th={th} />
+                    </div>
+                  ))}
                 </div>
-                <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', borderRadius: 99, background: color, width: show ? `${value}%` : 0, transition: `width 1.6s cubic-bezier(0.16, 1, 0.3, 1) ${720 + i * 110}ms` }} />
+                <div style={{ marginTop: 'auto', paddingTop: 14 }}><SkeletonBlock w="100%" h={110} br={8} th={th} /></div>
+              </div>
+            }>
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {status.map(({ label, value, color }, i) => (
+                  <div key={label}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, ...ui, fontSize: 13 }}>
+                      <span style={{ color: th.t2 }}>{label}</span>
+                      <span style={{ ...tech, color, fontWeight: 600 }}>{value}%</span>
+                    </div>
+                    <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 99, background: color, width: show ? `${value}%` : 0, transition: `width 1.6s cubic-bezier(0.16, 1, 0.3, 1) ${720 + i * 110}ms` }} />
+                    </div>
+                  </div>
+                ))}
+                <div style={{ marginTop: 6, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+                  {[
+                    ['Alvó Ciklusok (Ma)', '247', th.a],
+                    ['Deep Sleep Arány', '91.3%', th.p],
+                    ['Uptime diagnosztika', '14d 07h 22m', th.t1],
+                    ['Sikeres Adatcsomagok', '12,864', th.v],
+                  ].map(([l, v, c]) => (
+                    <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, ...ui, fontSize: 12.5 }}>
+                      <span style={{ color: th.t2 }}>{l}</span>
+                      <span style={{ ...tech, color: c, fontWeight: 500 }}>{v}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-            <div style={{ marginTop: 6, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
-              {[
-                ['Alvó Ciklusok (Ma)', '247', th.a],
-                ['Deep Sleep Arány', '91.3%', th.p],
-                ['Uptime diagnosztika', '14d 07h 22m', th.t1],
-                ['Sikeres Adatcsomagok', '12,864', th.v],
-              ].map(([l, v, c]) => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, ...ui, fontSize: 12.5 }}>
-                  <span style={{ color: th.t2 }}>{l}</span>
-                  <span style={{ ...tech, color: c, fontWeight: 500 }}>{v}</span>
-                </div>
-              ))}
-            </div>
+            </SkeletonWrapper>
           </div>
         </Card>
       </div>
@@ -3055,9 +3809,50 @@ export default function App() {
   const [simRain, setSimRain] = useState(false);
   const [simWind, setSimWind] = useState(false);
   const [clock, setClock] = useState(new Date());
+  // ─── IOT IDŐGÉP ÉS SZIMULÁTOR ───
+  const [mockTimeOffset, setMockTimeOffset] = useState(0);
+  const [lastDataTimestamp, setLastDataTimestamp] = useState(Date.now());
+  const simulatedTime = new Date(clock.getTime() + mockTimeOffset);
 
   // ─── TOAST: 1. A memóriatároló és az indító függvény ───
   const [toasts, setToasts] = useState([]);
+
+  // ─── HIDEGINDÍTÁS (COLD START) ÁLLAPOT ───
+  const [appLoaded, setAppLoaded] = useState(false);
+
+// Élő, frissülő adatok beállítása
+  const [liveTemp, setLiveTemp] = useState(null);
+  
+  // Opcionális: a többi adatnak is csinálhatsz state-t, pl:
+  // const [liveHum, setLiveHum] = useState(null);
+
+  useEffect(() => {
+    const fetchLatestData = async () => {
+      try {
+        // Hívjuk a saját, biztonságos Vercel API végpontunkat
+        const response = await fetch('/api/latest');
+        const data = await response.json();
+        
+        if (data.temperature) {
+          setLiveTemp(data.temperature);
+          // Itt állíthatod majd be a többi értéket is:
+          // R.humidity = data.humidity;
+          // R.windSpeed = data.wind_speed;
+          // setLastDataTimestamp(new Date(data._time).getTime()); // Frissíti a felső "Sync Ring"-et
+        }
+        setAppLoaded(true);
+      } catch (error) {
+        console.error("Hiba az adatok letöltésekor:", error);
+        setAppLoaded(true); // Fallback: hiba esetén is jelenjen meg az oldal
+      }
+    };
+
+    fetchLatestData();
+    
+    // Automatikus frissítés 15 percenként
+    const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const addToast = (msg) => {
     const id = Date.now() + Math.random();
@@ -3071,7 +3866,7 @@ export default function App() {
 
   const phase = simPhase || getPhase(clock.getHours());
   const isRaining = simRain || (R.precipitation > 0);
-  const isWindy = simWind || (R.windSpeed > 12);
+  const isWindy = simWind || (R.windSpeed > 25);
   const th = TH[phase];
 
   // Automatikus görgetés a lap tetejére oldalváltáskor
@@ -3088,8 +3883,24 @@ export default function App() {
     st.textContent = `
       @keyframes star-twinkle { 0%,100%{ opacity:var(--so,0.4); } 50%{ opacity:calc(var(--so,0.4)*.18); } }
       @keyframes temp-glow { 0%,100%{ text-shadow:0 0 24px rgba(255,179,71,0.15); } 50%{ text-shadow:0 0 32px rgba(255,179,71,0.35); } }
+
+      /* ─── SMART INSIGHT ANIMÁCIÓK ─── */
+      @keyframes insight-shimmer { 0%{ background-position:200% 0; } 100%{ background-position:-200% 0; } }
+      @keyframes insight-cursor-blink { 0%,100%{ opacity:1; } 50%{ opacity:0; } }
+      .insight-cursor { display:inline-block; margin-left:1px; animation: insight-cursor-blink 0.85s step-start infinite; }
+      @keyframes insight-tags-in { from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
       @keyframes live-pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(57,255,159,.4),0 0 6px rgba(57,255,159,.2); } 50%{ box-shadow:0 0 0 5px rgba(57,255,159,0),0 0 14px rgba(57,255,159,.5); } }
       
+      /* ─── PREMIUM SKELETON SHIMMER ─── */
+      @keyframes skeleton-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .skeleton-base {
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+
       /* A TOAST ANIMÁCIÓJA */
       @keyframes toast-anim {
         0% { opacity: 0; transform: translateY(-30px) scale(0.9); filter: blur(8px); }
@@ -3098,10 +3909,28 @@ export default function App() {
         100% { opacity: 0; transform: translateY(-20px) scale(0.95); filter: blur(8px); }
       }
 
-      .meteo-card{ transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important; }
-      .meteo-card:hover{ transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important; filter: brightness(1.02); }
-      *{ box-sizing:border-box; }
-
+      /* PREMIUM 3D CARD HOVER */
+      .meteo-card:hover {
+        --start-y: -4px !important;
+        box-shadow: 0 22px 44px rgba(0,0,0,0.15) !important;
+        filter: brightness(1.02);
+      }
+      
+      .card-glare {
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+      
+      .meteo-card:hover .card-glare {
+        opacity: 1;
+      }
+      
+      /* Mobilon (ahol nincs egér) kikapcsoljuk a térbeli dőlést és a csillogást */
+      @media (hover: none) {
+        .card-glare { display: none !important; }
+        .meteo-card { transform: translateY(var(--start-y, 22px)) !important; }
+      }
+      
       .page-container {
         position: relative; z-index: 1; max-width: 1440px; margin: 0 auto;
         padding: 102px 24px 80px; 
@@ -3142,7 +3971,10 @@ export default function App() {
 
       @media(max-width:900px){ .mg{ grid-template-columns:repeat(4,1fr)!important; } .gc8, .gc4{ grid-column:span 4!important; } .mini2{ grid-template-columns:1fr 1fr!important; } }
       @media(max-width:560px){ .mg{ grid-template-columns:1fr 1fr!important; } .gc8,.gc4{ grid-column:span 2!important; } .mini2{ grid-template-columns:1fr 1fr!important; } }
-    `;
+
+      /* ÚJ: Megakadályozza, hogy a CSS Grid oszlopok szétnyomják a képernyőt (CSS Grid Blowout fix) */
+      .mg > * { min-width: 0; }
+      `;
     document.head.appendChild(st);
     return () => { try { document.head.removeChild(lk); document.head.removeChild(st); } catch (e) { } };
   }, []);
@@ -3151,6 +3983,63 @@ export default function App() {
     const id = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
+
+// ─── DINAMIKUS BÖNGÉSZŐFÜL (FAVICON ÉS CÍMSOR) ───
+  useEffect(() => {
+    // 1. Kapcsolat ellenőrzése (Offline védelem)
+    const diffMins = (simulatedTime.getTime() - lastDataTimestamp) / 60000;
+    const isOffline = diffMins >= 30;
+
+    // 2. Favicon logika (Prioritás: Offline -> Vihar -> Eső -> Napszak)
+    let currentIcon = '☀️';
+    if (isOffline) {
+      currentIcon = '⚠️';
+    } else if (isRaining) {
+      currentIcon = '🌧️';
+    } else if (isWindy) {
+      currentIcon = '💨';
+    } else if (phase === 'night' || phase === 'evening') {
+      currentIcon = '🌙';
+    } else if (phase === 'dawn' || phase === 'sunset') {
+      currentIcon = '🌅';
+    }
+
+    // SVG generálás és beillesztés
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${currentIcon}</text></svg>`;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.getElementsByTagName('head')[0].appendChild(link);
+    }
+    link.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(svg)}`);
+
+    // 3. Szöveg logika (Kontextusfüggő adatok)
+    const pageLabels = {
+      'dashboard': 'Főoldal', 'temperature': 'Hőmérséklet', 'humidity': 'Páratartalom',
+      'pressure': 'Légnyomás', 'brightness': 'Fényerő & UV', 'precipitation': 'Csapadék', 'wind': 'Széladatok'
+    };
+
+    // Kiválasztjuk az aloldalhoz illő legfontosabb adatot
+    let activeData = `${R.temp.toFixed(1)}°C`; // Alapértelmezett
+    
+    if (isOffline) {
+      activeData = 'Offline';
+    } else {
+      switch (currentPage) {
+        case 'humidity':      activeData = `${R.humidity}%`; break;
+        case 'pressure':      activeData = `${Math.round(R.pressure)} hPa`; break;
+        case 'wind':          activeData = `${R.windSpeed.toFixed(1)} km/h`; break;
+        case 'precipitation': activeData = `${R.precipitation.toFixed(1)} mm`; break;
+        case 'brightness':    activeData = `${R.uvIndex} UVI`; break;
+        default:              activeData = `${R.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
+      }
+    }
+
+    // Címsor beállítása
+    document.title = `${activeData} · ${pageLabels[currentPage]} · METEO`;
+
+  }, [currentPage, phase, isRaining, isWindy, R, simulatedTime, lastDataTimestamp]);
 
   // ─── TOAST: 2. Az addToast függvény átadása az aloldalaknak ───
   const renderPage = () => {
@@ -3161,7 +4050,7 @@ export default function App() {
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
       case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} />;
       case 'wind':          return <WindPage th={th} addToast={addToast} />;
-      default:              return <DashboardContent phase={phase} th={th} clock={clock} isRaining={isRaining} isWindy={isWindy} />;
+      default: return <DashboardContent phase={phase} th={th} clock={clock} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveTemp={liveTemp} />;
     }
   };
   // ─────────────────────────────────────────────────────────────
@@ -3170,8 +4059,11 @@ export default function App() {
     <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', color: th.t1, fontFamily: "'Inter', sans-serif", transition: 'color 1.5s ease' }}>
       
       <SkyBackground phase={phase} hour={clock.getHours()} isRaining={isRaining} isWindy={isWindy} />
-      <NavBar currentPage={currentPage} setCurrentPage={setCurrentPage} th={th} />
-      
+      <NavBar 
+        currentPage={currentPage} setCurrentPage={setCurrentPage} th={th} 
+        simulatedTime={simulatedTime} lastDataTimestamp={lastDataTimestamp} 
+      />
+
       {/* ─── TOAST: 3. A megjelenítő konténer beillesztése ─── */}
       <ToastContainer toasts={toasts} th={th} />
       {/* ─────────────────────────────────────────────────── */}
@@ -3202,6 +4094,23 @@ export default function App() {
           <button onClick={() => setSimWind(w => !w)}
             style={{ padding: '4px 10px', borderRadius: 8, cursor: 'pointer', background: simWind ? 'rgba(180,220,255,0.80)' : 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.28)', color: simWind ? '#0a2140' : 'rgba(255,255,255,0.75)', fontFamily: "'Inter', sans-serif", fontSize: 10, letterSpacing: '.08em' }}>
             💨 Wind
+          </button>
+          {/* ELVÁLASZTÓ */}
+          <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
+          
+          {/* TIME MACHINE GOMBOK */}
+          <button onClick={() => setMockTimeOffset(prev => prev + 60000)}
+            style={{ padding: '4px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.28)', color: 'rgba(255,255,255,0.75)', fontFamily: "'Inter', sans-serif", fontSize: 10, letterSpacing: '.08em' }}>
+            ⏱ +1 Perc
+          </button>
+          <button onClick={() => { 
+            setLastDataTimestamp(simulatedTime.getTime()); 
+            // Varázslat: Minden kattintásnál véletlenszerűen +0.3 vagy -0.3 fokot adunk az élő adathoz!
+            setLiveTemp(prev => parseFloat((prev + (Math.random() > 0.5 ? 0.3 : -0.3)).toFixed(1)));
+            addToast("Új szenzor adatcsomag beérkezett!"); 
+          }}
+            style={{ padding: '4px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(52, 211, 153, 0.85)', border: '1px solid rgba(255,255,255,0.28)', color: '#022c22', fontFamily: "'Inter', sans-serif", fontSize: 10, letterSpacing: '.08em', fontWeight: 700 }}>
+            📡 Új Adat
           </button>
         </div>
       </div>
