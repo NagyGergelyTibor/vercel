@@ -3821,8 +3821,7 @@ export default function App() {
   const [appLoaded, setAppLoaded] = useState(false);
 
 // Élő, frissülő adatok beállítása
-  const [liveTemp, setLiveTemp] = useState(null);
-  
+  const [liveTemp, setLiveTemp] = useState(R.temp);  
   // Opcionális: a többi adatnak is csinálhatsz state-t, pl:
   // const [liveHum, setLiveHum] = useState(null);
 
