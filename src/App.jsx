@@ -4056,24 +4056,24 @@ export default function App() {
 
           setLiveData(prev => ({
             ...prev,
-            temp: t,
-            humidity: h,
-            pressure: data.pressure || prev.pressure,
-            windSpeed: data.wind_speed !== undefined ? data.wind_speed : prev.windSpeed,
-            windDir: data.wind_direction !== undefined ? data.wind_direction : prev.windDir,
-            precipitation: data.rain !== undefined ? data.rain : prev.precipitation,
-            uvIndex: data.uv !== undefined ? data.uv : prev.uvIndex,
-            dewPoint: parseFloat(dewPoint.toFixed(1)),
-            feelsLike: parseFloat(feelsLike.toFixed(1)),
-            visibility: parseFloat(estimateVisibility(t, dewPoint, data.rain ?? 0).toFixed(1)), // ÚJ
+            temp: t ?? prev.temp,
+            humidity: h ?? prev.humidity,
+            pressure: data.pressure ?? prev.pressure,
+            windSpeed: data.wind_speed ?? prev.windSpeed,
+            windDir: data.wind_direction ?? prev.windDir,
+            precipitation: data.rain ?? prev.precipitation,
+            uvIndex: data.uv ?? prev.uvIndex,
+            dewPoint: parseFloat((dewPoint || 0).toFixed(1)),
+            feelsLike: parseFloat((feelsLike || 0).toFixed(1)),
+            visibility: parseFloat(estimateVisibility(t || 0, dewPoint || 0, data.rain || 0).toFixed(1)),
             battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery,
-
-            // ÚJ: rendszerdiagnosztikai mezők
-            wifi: data.wifi_signal !== undefined ? data.wifi_signal : prev.wifi,
-            internalTemp: data.internal_temp !== undefined ? data.internal_temp : prev.internalTemp,
-            packets: data.packets_sent !== undefined ? data.packets_sent : prev.packets,
-            sleepCycles: data.sleep_cycles !== undefined ? data.sleep_cycles : prev.sleepCycles,
-            deepSleep: data.deep_sleep_pct !== undefined ? data.deep_sleep_pct : prev.deepSleep
+            
+            // BIZTONSÁGI HÁLÓ: A '??' megakadályozza, hogy null érték írja felül a számokat!
+            wifi: data.wifi_signal ?? prev.wifi,
+            internalTemp: data.internal_temp ?? prev.internalTemp,
+            packets: data.packets_sent ?? prev.packets,
+            sleepCycles: data.sleep_cycles ?? prev.sleepCycles,
+            deepSleep: data.deep_sleep_pct ?? prev.deepSleep
           }));
           if (data._time) setLastDataTimestamp(new Date(data._time).getTime());
         }
