@@ -656,6 +656,27 @@ function BlurFadeText({ text, style }) {
   );
 }
 
+/* ─── LÁTÓTÁVOLSÁG BECSLÉSE (Harmatpont-depresszió + csapadék alapján) ───
+   Nincs dedikált látótávolság-szenzor, ezért ezt a meteorológiában elterjedt,
+   közelítő módszerrel becsüljük: minél kisebb a hőmérséklet és a harmatpont
+   közötti különbség (spread), annál nagyobb a köd/pára kockázata, és annál
+   rosszabb a látótávolság. Csapadék esetén ezt tovább csökkentjük. */
+function estimateVisibility(temp, dewPoint, rainRate) {
+  const spread = Math.max(0, temp - dewPoint);
+
+  // Aszimptotikusan 20 km felé tartó becslés a harmatpont-spread alapján
+  let vis = 20 * (1 - Math.exp(-spread / 3));
+  vis = Math.max(0.1, Math.min(20, vis));
+
+  // Csapadék esetén tovább romlik a látótávolság
+  if (rainRate > 0) {
+    const rainVis = 20 / (1 + rainRate * 2);
+    vis = Math.min(vis, rainVis);
+  }
+
+  return vis;
+}
+
 /* ─── PREMIUM DATA UPDATE COMPONENT (Tiszta áttűnés másodlagos adatokhoz) ─── */
 function PremiumUpdateValue({ value, th }) {
   return (
@@ -4023,6 +4044,7 @@ export default function App() {
             uvIndex: data.uv !== undefined ? data.uv : prev.uvIndex,
             dewPoint: parseFloat(dewPoint.toFixed(1)),
             feelsLike: parseFloat(feelsLike.toFixed(1)),
+            visibility: parseFloat(estimateVisibility(t, dewPoint, data.rain ?? 0).toFixed(1)), // ÚJ
             battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery,
 
             // ÚJ: rendszerdiagnosztikai mezők
