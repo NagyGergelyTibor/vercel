@@ -59,8 +59,10 @@ const tempData1mo = Array.from({ length: 30 }, (_, i) => ({
 
 const TEMP_DATASETS = { '1h': tempData1h, '1d': tempData1d, '1w': tempData1w, '1mo': tempData1mo };
 
-const DIRS = ['É', 'É-ÉK', 'ÉK', 'K-ÉK', 'K', 'K-DK', 'DK', 'D-DK', 'D', 'D-DNY', 'DNY', 'NY-DNY', 'NY', 'NY-ÉNY', 'ÉNY', 'É-ÉNY'];
-const windLabel = DIRS[Math.round(R.windDir / 22.5) % 16];
+const getWindLabel = (deg) => {
+  const DIRS = ['É', 'É-ÉK', 'ÉK', 'K-ÉK', 'K', 'K-DK', 'DK', 'D-DK', 'D', 'D-DNY', 'DNY', 'NY-DNY', 'NY', 'NY-ÉNY', 'ÉNY', 'É-ÉNY'];
+  return DIRS[Math.round((deg % 360 + 360) % 360 / 22.5) % 16];
+};
 
 /* ─────────────── NAVIGATION CONFIG ─────────────── */
 export const NAV_PAGES = [
@@ -68,7 +70,7 @@ export const NAV_PAGES = [
   { id: 'temperature', icon: '🌡', label: 'Hőmérséklet' },
   { id: 'humidity', icon: '💧', label: 'Páratartalom' },
   { id: 'pressure', icon: '◎', label: 'Légnyomás' },
-  { id: 'brightness', icon: '☀', label: 'Fényerő & UV' },
+  { id: 'brightness', icon: '☀', label: 'UV és Fényerő' },
   { id: 'precipitation', icon: '🌧', label: 'Csapadék' },
   { id: 'wind', icon: '💨', label: 'Széladatok' },
 ];
@@ -124,8 +126,8 @@ const TH = {
       { x: 730, y: 70, w: 185, h: 74, c: '#ffffff', o: 0.92 },
       { x: 1090, y: 48, w: 218, h: 86, c: '#ffffff', o: 0.90 },
     ],
-    star: false, sun: true, moon: false,
-  },
+        star: false, sun: true, moon: false,
+      },
   sunset: {
     id: 'sunset',
     skyGrad: 'linear-gradient(180deg,#150228 0%,#7B1540 25%,#D44010 55%,#F5A200 80%,#FAC213 100%)',
@@ -193,7 +195,8 @@ function CloudShape({ x, y, w, h, c, o }) {
 }
 function SunSVG({ hour }) {
   const t = Math.max(0, Math.min(1, (hour - 6) / 12));
-  const sx = 70 + t * 1300, sy = 350 - Math.sin(t * Math.PI) * 270;
+  // Középre húzott vízszintes út (1080), de az App_regi magas íve (270)
+  const sx = 180 + t * 1080, sy = 350 - Math.sin(t * Math.PI) * 270;
   return (
     <g>
       <circle cx={sx} cy={sy} r={75} fill='#FFD700' opacity={.12} />
@@ -307,6 +310,55 @@ function SkyBackground({ phase, hour, isRaining, isWindy }) {
 /* ═══════════════ UI SUB-COMPONENTS ═══════════════ */
 const tech = { fontFamily: "'JetBrains Mono', monospace" };
 const ui = { fontFamily: "'Inter', sans-serif" };
+
+/* ─── REFERENCIAVONAL-CÍMKE, "halo" szöveg (vonaldiagramokhoz) ───
+   Ugyanaz az elv, mint a fejléc TextAura komponensénél: nem egy kemény dobozzal
+   emeljük ki a szöveget a háttérből, hanem egy erősen elmosott, a szöveg
+   formáját követő "fényudvarral" mögötte — önmagában alig látható, mégis elég
+   kontrasztot ad ahhoz, hogy bármilyen terület-kitöltés fölött olvasható maradjon. */
+function RefLineTag({ viewBox, text, color, th, dy = -10, align = 'right' }) {
+  if (!viewBox) return null;
+  const { x, y, width } = viewBox;
+  const ty = y + dy;
+  const tx = align === 'right' ? x + width : x;
+  const anchor = align === 'right' ? 'end' : 'start';
+  const glowColor = th.id === 'day' ? 'rgba(255,255,255,0.95)' : 'rgba(6,12,24,0.9)';
+  const filterId = `refGlow-${text.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const textStyle = { fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 };
+  return (
+    <g>
+      <defs>
+        <filter id={filterId} x="-80%" y="-200%" width="260%" height="500%">
+          <feGaussianBlur stdDeviation="3.2" />
+        </filter>
+      </defs>
+      <text x={tx} y={ty} textAnchor={anchor} dominantBaseline="middle" style={textStyle} fill={glowColor} filter={`url(#${filterId})`}>{text}</text>
+      <text x={tx} y={ty} textAnchor={anchor} dominantBaseline="middle" style={textStyle} fill={color}>{text}</text>
+    </g>
+  );
+}
+
+/* ─── REFERENCIAVONAL-CÍMKE, lekerekített "chip" (oszlopdiagramhoz) ───
+   Az UV oszlopdiagramnál ez illett jobban: ott a szöveg gyakran szinte
+   teljesen egy tömör oszlop felett/takarásában van, ahol egy önálló hátterű
+   pill jobban tartja a kontrasztot, mint egy elmosott halo. */
+function RefLineChip({ viewBox, text, color, th, dy = -10, align = 'right' }) {
+  if (!viewBox) return null;
+  const { x, y, width } = viewBox;
+  const padX = 8, h = 18, charW = 6.1;
+  const w = Math.round(text.length * charW + padX * 2);
+  const tx = align === 'right' ? x + width - w : x;
+  const ty = y + dy - h / 2;
+  return (
+    <g style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.18))' }}>
+      <rect x={tx} y={ty} width={w} height={h} rx={h / 2} fill={th.card} stroke={`${color}45`} strokeWidth={1} />
+      <text x={tx + w / 2} y={ty + h / 2 + 1} textAnchor="middle" dominantBaseline="middle"
+        style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 }} fill={color}>
+        {text}
+      </text>
+    </g>
+  );
+}
 
 function Lbl({ children, t, style }) {
   return (
@@ -458,6 +510,167 @@ function SkeletonWrapper({ isLoaded, skeleton, children, delay = 0 }) {
   );
 }
 
+/* ─── PREMIUM CHART CROSSFADE HOOK (Aloldalak időtáv-váltásához) ───
+   Ugyanaz a "ghosting" élmény, mint a Hőmérséklet oldalon: a gombra kattintva
+   a diagram és a jobb oldali kártyák elhomályosodnak / szürkülnek, majd a
+   szimulált betöltés (1.2s) után lágyan éleseddnek vissza az új adattal. */
+/* ─── PREMIUM CHART CROSSFADE HOOK (Valós API hívással és Lokális Fallback-el) ─── */
+function useChartCrossfade(targetRange, mockDatasets) {
+  const [displayRange, setDisplayRange] = useState(targetRange);
+  const [isFetching, setIsFetching] = useState(false);
+  const [chartData, setChartData] = useState(mockDatasets[targetRange]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchData = async () => {
+      setIsFetching(true);
+      try {
+        const res = await fetch(`/api/history?range=${targetRange}`);
+        if (!res.ok) throw new Error('API hiba');
+        const json = await res.json();
+        
+        if (isMounted) {
+          setChartData(json);
+          setDisplayRange(targetRange);
+          setIsFetching(false);
+        }
+      } catch (error) {
+        // Ha lokálisan futtatod, visszaesik a gyönyörű tesztadatokra
+        if (isMounted) {
+          setChartData(mockDatasets[targetRange]);
+          setDisplayRange(targetRange);
+          setIsFetching(false);
+        }
+      }
+    };
+
+    fetchData(); // Azonnal lekéri az adatot váltáskor és legelső betöltéskor is
+    return () => { isMounted = false; };
+  }, [targetRange, mockDatasets]);
+
+  return { 
+    displayRange, isFetching, chartData, 
+    fadeStyle: {
+      filter: isFetching ? 'blur(4px) grayscale(20%)' : 'blur(0px) grayscale(0%)',
+      opacity: isFetching ? 0.6 : 1,
+      transform: isFetching ? 'translateY(4px) scale(0.99)' : 'translateY(0) scale(1)',
+      transition: 'filter 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+      pointerEvents: isFetching ? 'none' : 'auto'
+    },
+    cardFadeStyle: {
+      opacity: isFetching ? 0.4 : 1,
+      transition: 'opacity 0.5s'
+    }
+  };
+}
+
+/* ─── GHOST SHIMMER OVERLAY (fénycsóva, ami csak töltés alatt jelenik meg a diagramokon) ─── */
+function ChartGhostShimmer({ th, isFetching }) {
+  if (!isFetching) return null;
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, borderRadius: 12,
+      backgroundImage: `linear-gradient(110deg, transparent 30%, ${th.id === 'day' ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.1)'} 50%, transparent 70%)`,
+      backgroundSize: '200% 100%',
+      animation: 'skeleton-shimmer 1.5s linear infinite',
+      zIndex: 10, pointerEvents: 'none'
+    }} />
+  );
+}
+
+/* ─── ÖNÁLLÓAN KETYEGŐ ÓRA (Nem frissíti az egész appot) ─── */
+function LiveHeaderTime({ th }) {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div style={{ ...tech, fontSize: 'clamp(22px,2.8vw,34px)', fontWeight: 500, color: th.hClock, letterSpacing: '-0.02em', textShadow: '0 4px 24px rgba(0,0,0,0.3), 0 0 6px rgba(0,0,0,0.15)' }}>
+        {time.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </div>
+      <div style={{ ...ui, fontSize: 13, color: th.hSub, marginTop: 4, fontWeight: 500, textShadow: '0 2px 12px rgba(0,0,0,0.3), 0 0 4px rgba(0,0,0,0.15)' }}>
+        {time.toLocaleDateString('hu-HU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── LOKÁLIS "AURA" a fejléc-szövegek mögé ───
+   Nem az egész felső sávot sötétíti el, csak a szöveg közvetlen környezetét,
+   és nem élesen kirajzolt dobozzal, hanem egy erősen elmosott (blur) folttal —
+   ennek fizikailag nincs kemény pereme, így nem "vágódik le" sehol.
+   position:relative + display:inline-block => a doboz mindig pontosan a
+   tényleges szöveg méretéhez igazodik, tehát rövid ("Ked") és hosszú
+   ("Csütörtök") szöveg esetén is együtt nő/zsugorodik vele. */
+function TextAura({ reach = 16, blur = 26, opacity = 0.07, children }) {
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: -reach,
+          zIndex: -1,
+          pointerEvents: 'none',
+          background: `rgba(0,0,0,${opacity})`,
+          filter: `blur(${blur}px)`,
+          borderRadius: 999,
+        }}
+      />
+      {children}
+    </div>
+  );
+}
+
+/* ─── BLUR-FADE TEXT (Vajsima, hiba nélküli áttűnés) ─── */
+function BlurFadeText({ text, style }) {
+  const [display, setDisplay] = useState(text);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    if (text !== display) {
+      setFading(true); // 1. Eltüntetjük a régit
+      const t = setTimeout(() => {
+        setDisplay(text); // 2. Kicseréljük
+        setFading(false); // 3. Visszahozzuk az újat
+      }, 250); // Gyorsabb, 250ms-os rejtett csere
+      return () => clearTimeout(t);
+    }
+    // Fontos: a 'display'-t kivettük a megfigyeltek közül, így nincs "végtelen hurok"
+  }, [text]); 
+
+  return (
+    <span style={{
+      display: 'inline-block',
+      filter: fading ? 'blur(6px)' : 'blur(0px)',
+      opacity: fading ? 0 : 1,
+      transform: fading ? 'translateY(4px) scale(0.96)' : 'translateY(0) scale(1)',
+      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+      ...style
+    }}>
+      {display}
+    </span>
+  );
+}
+
+/* ─── PREMIUM DATA UPDATE COMPONENT (Tiszta áttűnés másodlagos adatokhoz) ─── */
+function PremiumUpdateValue({ value, th }) {
+  return (
+    <span key={value} style={{ 
+      display: 'inline-block', 
+      /* Nappal fekete, éjszaka fehér színnel villan fel, mielőtt visszahűl az eredeti színére */
+      '--flash-color': th.id === 'day' ? '#0F172A' : '#FFFFFF', 
+      /* A teljes folyamat most 2 másodperc hosszú, gyönyörű rugó-görbével */
+      animation: 'premium-data-update 2s cubic-bezier(0.16, 1, 0.3, 1) forwards' 
+    }}>
+      {value}
+    </span>
+  );
+}
+
 // ─── HYPER-PREMIUM WARM UPDATE: Odometer (Függőleges Számcsúszka) ───
 function OdometerNumber({ value, format = (v) => v.toFixed(1) }) {
   const valStr = format(value);
@@ -503,24 +716,28 @@ function Bar3({ pct, color, delay = 0, show }) {
     <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, overflow: 'hidden', marginTop: 12 }}>
       <div style={{
         height: '100%', borderRadius: 99, background: color, 
-        width: show ? `${Math.min(pct, 100)}%` : 0,
-        transition: `width 1.6s cubic-bezier(0.16, 1, 0.3, 1) ${delay}ms`
+        // ÚJ: width helyett 100%-os szélesség, és a GPU méretezi át (scaleX) balról jobbra!
+        width: '100%', transformOrigin: 'left',
+        transform: `scaleX(${show ? Math.min(pct, 100) / 100 : 0})`,
+        transition: `transform 1s cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms`,
+        willChange: 'transform' // Szólunk a böngészőnek, hogy készítse elő a videókártyát
       }} />
     </div>
   );
 }
 
-function WindCompass({ show, t }) {
+function WindCompass({ show, t, direction = R.windDir }) {
   const cx = 110, cy = 100, r = 78;
-  const rad = (R.windDir - 90) * Math.PI / 180;
-  const tx = cx + r * .68 * Math.cos(rad), ty = cy + r * .68 * Math.sin(rad);
-  const tl = rad + Math.PI;
-  const tlx = cx + r * .28 * Math.cos(tl), tly = cy + r * .28 * Math.sin(tl);
-  const perp = rad + Math.PI / 2, wx = 8;
-  const mx = cx + r * .28 * Math.cos(rad), my = cy + r * .28 * Math.sin(rad);
-  const w1x = mx + wx * Math.cos(perp), w1y = my + wx * Math.sin(perp);
-  const w2x = mx - wx * Math.cos(perp), w2y = my - wx * Math.sin(perp);
-  const arcLen = (R.windDir / 360) * 2 * Math.PI * (r + 2), total = 2 * Math.PI * (r + 2);
+  const total = 2 * Math.PI * (r + 2);
+  const arcLen = (direction / 360) * total;
+
+  // Mostantól a mutatót fixen 0 fokra (Északra) rajzoljuk, és az egészet forgatjuk a CSS-el!
+  const tipY = cy - r * 0.68;
+  const baseTipY = cy + r * 0.28;
+  const midY = cy - r * 0.28;
+  const wx = 8;
+  const needlePoints = `${cx},${tipY} ${cx - wx},${midY} ${cx},${baseTipY} ${cx + wx},${midY}`;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <svg width={220} height={210} viewBox='0 0 220 210'>
@@ -531,22 +748,26 @@ function WindCompass({ show, t }) {
         {Array.from({ length: 72 }, (_, i) => {
           const a = (i * 5 - 90) * Math.PI / 180, mj = i % 18 === 0, md = i % 9 === 0;
           const r1 = mj ? r - 9 : md ? r - 5 : r - 3;
-          return (<line key={i} x1={cx + r * Math.cos(a)} y1={cy + r * Math.sin(a)}
-            x2={cx + r1 * Math.cos(a)} y2={cy + r1 * Math.sin(a)}
-            stroke={mj ? `${t.p}60` : md ? `${t.p}30` : `${t.p}10`} strokeWidth={mj ? 1.5 : 1} />);
+          return (<line key={i} x1={cx + r * Math.cos(a)} y1={cy + r * Math.sin(a)} x2={cx + r1 * Math.cos(a)} y2={cy + r1 * Math.sin(a)} stroke={mj ? `${t.p}60` : md ? `${t.p}30` : `${t.p}10`} strokeWidth={mj ? 1.5 : 1} />);
         })}
         {[['É', 0, t.a], ['K', 90, t.t2], ['D', 180, t.t2], ['NY', 270, t.t2]].map(([c, deg, fill]) => {
           const a = (deg - 90) * Math.PI / 180;
-          return (<text key={c} x={cx + (r + 22) * Math.cos(a)} y={cy + (r + 22) * Math.sin(a)}
-            textAnchor='middle' dominantBaseline='central'
-            style={{ ...tech, fontSize: 12, fontWeight: 700, fill }}>{c}</text>);
+          return (<text key={c} x={cx + (r + 22) * Math.cos(a)} y={cy + (r + 22) * Math.sin(a)} textAnchor='middle' dominantBaseline='central' style={{ ...tech, fontSize: 12, fontWeight: 700, fill }}>{c}</text>);
         })}
-        {show && (<circle cx={cx} cy={cy} r={r + 2} fill='none'
-          stroke={`${t.a}20`} strokeWidth={6}
-          strokeDasharray={`${arcLen} ${total}`} strokeDashoffset={`${total * .25}`} />)}
-        <polygon points={`${tx},${ty} ${w1x},${w1y} ${tlx},${tly} ${w2x},${w2y}`}
-          fill={t.a} style={{ opacity: show ? 1 : 0, transition: 'opacity .7s ease .5s, fill 1s ease' }} />
-        <line x1={cx} y1={cy} x2={tlx} y2={tly} stroke='rgba(255,80,80,0.6)' strokeWidth={2} strokeLinecap='round' />
+        
+        {/* A külső kijelző ív is folyékonyan követi az értéket */}
+        {show && (<circle cx={cx} cy={cy} r={r + 2} fill='none' stroke={`${t.a}20`} strokeWidth={6} strokeDasharray={`${arcLen} ${total}`} strokeDashoffset={`${total * .25}`} style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.16, 1, 0.3, 1)' }} />)}
+        
+        {/* ÍME A VARÁZSLAT: A mutató csoport rugós (Spring) forgatása! */}
+        <g style={{
+          transform: `rotate(${direction}deg)`,
+          transformOrigin: `${cx}px ${cy}px`,
+          transition: 'transform 1.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
+        }}>
+          <polygon points={needlePoints} fill={t.a} style={{ opacity: show ? 1 : 0, transition: 'opacity .7s ease .5s, fill 1s ease' }} />
+          <line x1={cx} y1={cy} x2={cx} y2={baseTipY} stroke='rgba(255,80,80,0.6)' strokeWidth={2} strokeLinecap='round' />
+        </g>
+        
         <circle cx={cx} cy={cy} r={5} fill={t.id === 'day' ? '#fff' : '#0a1426'} stroke={`${t.p}80`} strokeWidth={1.5} />
       </svg>
     </div>
@@ -556,87 +777,107 @@ function WindCompass({ show, t }) {
 /* ═══════════════ SMART CAPSULE (APPLE INTELLIGENCE STYLE) ═══════════════ */
 
 // 1. A Prioritási Mátrix (Csak a legfontosabbat mondja el)
-function getSmartInsight(phase, isRaining, isWindy) {
+function getSmartInsight(phase, isRaining, isWindy, liveData) {
   // 1. SZINT: Kritikus anomáliák (Ezek mindent felülírnak)
-  if (isWindy && R.windSpeed > 40) return { text: "Viharos erejű széllökések várhatók, érdemes rögzíteni a kerti tárgyakat.", tag: { icon: "🌬", label: "Erős szél", color: "#EF4444" } };
+  if (isWindy && liveData.windSpeed > 40) return { text: "Viharos erejű széllökések várhatók, érdemes rögzíteni a kerti tárgyakat.", tag: { icon: "🌬", label: "Erős szél", color: "#EF4444" } };
   if (isRaining) return { text: "Aktív csapadéktevékenység zajlik, a kinti páratartalom rohamosan nő.", tag: { icon: "☔", label: "Esős idő", color: "#0EA5E9" } };
-  if (R.pressure < 1000) return { text: "A légnyomás drasztikus esése viharos, instabil időjárás közeledtét jelzi.", tag: { icon: "📉", label: "Nyomásesés", color: "#F59E0B" } };
+  if (liveData.pressure < 1000) return { text: "A légnyomás drasztikus esése viharos, instabil időjárás közeledtét jelzi.", tag: { icon: "📉", label: "Nyomásesés", color: "#F59E0B" } };
 
   // 2. SZINT: Figyelmeztetések és Életmód
-  if (phase === 'day' && R.uvIndex > 6) return { text: "Magas az UV-sugárzás, a déli órákban kerüld a közvetlen napfényt.", tag: { icon: "🧴", label: "Erős UV", color: "#F97316" } };
-  if (R.temp > 30) return { text: `Kritikusan meleg van (${R.temp}°C), ügyelj a megfelelő folyadékpótlásra.`, tag: { icon: "🔥", label: "Hőség", color: "#EF4444" } };
-  if (R.temp < 5) return { text: "Fagyveszély közeli hőmérséklet, az utakon síkosság képződhet.", tag: { icon: "❄️", label: "Hideg", color: "#3B82F6" } };
+  if (phase === 'day' && liveData.uvIndex > 6) return { text: "Magas az UV-sugárzás, a déli órákban kerüld a közvetlen napfényt.", tag: { icon: "🧴", label: "Erős UV", color: "#F97316" } };
+  if (liveData.temp > 30) return { text: `Kritikusan meleg van (${liveData.temp}°C), ügyelj a megfelelő folyadékpótlásra.`, tag: { icon: "🔥", label: "Hőség", color: "#EF4444" } };
+  if (liveData.temp < 5) return { text: "Fagyveszély közeli hőmérséklet, az utakon síkosság képződhet.", tag: { icon: "❄️", label: "Hideg", color: "#3B82F6" } };
 
   // 3. SZINT: Komfortérzet
-  if (R.feelsLike > R.temp + 2) return { text: "A magas páratartalom miatt a levegő fülledtebbnek, melegebbnek érződik.", tag: { icon: "💧", label: "Fülledt", color: "#10B981" } };
-  if (R.feelsLike < R.temp - 2) return { text: "Az élénk légmozgás miatt a valósnál kissé hűvösebbnek érezheted a levegőt.", tag: { icon: "💨", label: "Hűvös szél", color: "#34D399" } };
+  if (liveData.feelsLike > liveData.temp + 2) return { text: "A magas páratartalom miatt a levegő fülledtebbnek, melegebbnek érződik.", tag: { icon: "💧", label: "Fülledt", color: "#10B981" } };
+  if (liveData.feelsLike < liveData.temp - 2) return { text: "Az élénk légmozgás miatt a valósnál kissé hűvösebbnek érezheted a levegőt.", tag: { icon: "💨", label: "Hűvös szél", color: "#34D399" } };
 
   // 4. SZINT: Nyugalmi állapot
   if (phase === 'night' || phase === 'evening') return { text: "Tiszta, csendes éjszaka, stabil és kiegyensúlyozott mérési adatokkal.", tag: { icon: "🌙", label: "Nyugodt", color: "#8B5CF6" } };
   
-  // Javított nyugalmi állapot ikon (✨ helyett ✅)
   return { text: "Kiegyensúlyozott, kellemes időnk van, ideális a szabadtéri programokhoz.", tag: { icon: "✅", label: "Ideális", color: "#10B981" } };
 }
 
 // 2. A Vizuális Komponens (Smart Capsule)
-function SmartCapsule({ th, show, phase, isRaining, isWindy }) {
-  const insight = useMemo(() => getSmartInsight(phase, isRaining, isWindy), [phase, isRaining, isWindy]);
+function SmartCapsule({ th, show, phase, isRaining, isWindy, liveData, appLoaded }) {
+  const insight = useMemo(() => getSmartInsight(phase, isRaining, isWindy, liveData), [phase, isRaining, isWindy, liveData]);
+  
+  const [displayInsight, setDisplayInsight] = useState(insight);
   const [animState, setAnimState] = useState(false);
 
   useEffect(() => {
     if (!show) return;
-    setAnimState(false);
-    const t = setTimeout(() => setAnimState(true), 150);
-    return () => clearTimeout(t);
-  }, [show, insight.text]);
+
+    // Ha ténylegesen megváltozik az ajánlás (pl. eláll az eső)
+    if (insight.text !== displayInsight.text) {
+      setAnimState(false); // 1. Eltüntetjük a régi szöveget
+      const t = setTimeout(() => {
+        setDisplayInsight(insight); // 2. A "függöny mögött" kicseréljük
+        setAnimState(true); // 3. Beélesítjük az újat
+      }, 300);
+      return () => clearTimeout(t);
+    } else {
+      setAnimState(true); // Első betöltéskor
+    }
+  }, [show, insight]);
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       background: th.card, border: `1px solid ${th.border}`,
-      borderRadius: 99, padding: '8px 10px 8px 18px', height: 48,
+      borderRadius: 99, padding: '8px 10px 8px 18px', height: 48, width: '100%',
       backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
       boxShadow: th.id === 'day' ? '0 10px 30px rgba(0,0,0,0.03)' : '0 14px 40px rgba(0,0,0,0.2)',
       opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)',
       transition: 'opacity 0.6s ease, transform 0.6s ease, background 1s, border-color 1s'
     }}>
       
-      {/* Bal oldal: Ragyogó szikra és a Szöveg */}
-      {/* JAVÍTÁS: A minWidth: 0 biztosítja az elipszis működését anélkül, hogy az overflow: hidden levágná az árnyékot */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-        <div style={{
-          width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-          background: `linear-gradient(135deg, ${th.p}, ${th.v})`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12,
-          animation: 'live-pulse 2s infinite ease-in-out' // Az árnyék mostmár szabadon ragyoghat
-        }}>✨</div>
-        
-        <div style={{
-          fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: th.t1,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          filter: animState ? 'blur(0px)' : 'blur(8px)',
-          opacity: animState ? 1 : 0,
-          transform: animState ? 'translateZ(0) scale(1)' : 'translateZ(0) scale(0.98)',
-          transition: 'filter 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)'
-        }}>
-          {insight.text}
+      <SkeletonWrapper isLoaded={appLoaded} delay={0} skeleton={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: '100%' }}>
+          {/* ÚJ: flex: 1, hogy a 60% a megmaradó helyhez képest számolódjon */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1 }}>
+            <SkeletonBlock w={24} h={24} br="50%" th={th} style={{ flexShrink: 0 }} />
+            {/* ÚJ: 240px helyett most 60%-os szélességgel foglalja el a helyet */}
+            <SkeletonBlock w="60%" h={14} br={4} th={th} />
+          </div>
+          <SkeletonBlock w={85} h={28} br={99} th={th} style={{ flexShrink: 0 }} />
         </div>
-      </div>
+      }>
+        
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+            <div style={{
+              width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+              background: `linear-gradient(135deg, ${th.p}, ${th.v})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, animation: 'live-pulse 2s infinite ease-in-out'
+            }}>✨</div>
+            
+            <div style={{
+              fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: th.t1,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              filter: animState ? 'blur(0px)' : 'blur(6px)',
+              opacity: animState ? 1 : 0,
+              transform: animState ? 'translateZ(0) scale(1)' : 'translateZ(0) scale(0.98)',
+              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}>
+              {displayInsight.text}
+            </div>
+          </div>
 
-      {/* Jobb oldal: Színezett, dinamikus címke */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-        borderRadius: 99, flexShrink: 0,
-        background: `${insight.tag.color}15`, border: `1px solid ${insight.tag.color}30`,
-        transition: 'background 0.5s, border-color 0.5s'
-      }}>
-        <span style={{ fontSize: 13 }}>{insight.tag.icon}</span>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: insight.tag.color, letterSpacing: '.02em' }}>
-          {insight.tag.label}
-        </span>
-      </div>
-      
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+            borderRadius: 99, flexShrink: 0,
+            background: `${displayInsight.tag.color}15`, border: `1px solid ${displayInsight.tag.color}30`,
+            transition: 'background 0.5s, border-color 0.5s'
+          }}>
+            <span style={{ fontSize: 13 }}>{displayInsight.tag.icon}</span>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: displayInsight.tag.color, letterSpacing: '.02em' }}>
+              {displayInsight.tag.label}
+            </span>
+          </div>
+        </div>
+
+      </SkeletonWrapper>
     </div>
   );
 }
@@ -651,7 +892,15 @@ function IoTSyncRing({ lastDataTimestamp, simulatedTime, th }) {
   const baseTextRef = useRef(null);
   const hoverTextRef = useRef(null);
 
-  const diffMs = simulatedTime.getTime() - lastDataTimestamp;
+  // ÚJ: Saját belső óra a gyűrűhöz
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  
+  // Így mindig újra kiszámolja a különbséget
+  const diffMs = (Date.now() + (simulatedTime.getTime() - Date.now())) - lastDataTimestamp;
   const diffMins = diffMs / 60000;
 
   let state = 'normal';
@@ -799,7 +1048,7 @@ function IoTSyncRing({ lastDataTimestamp, simulatedTime, th }) {
   );
 }
 
-/* ═══════════════ NAVIGATION BAR ═══════════════ */
+/* ═══════════════ NAVIGATION BAR (GOLYÓÁLLÓ VERZIÓ) ═══════════════ */
 function NavBar({ currentPage, setCurrentPage, th, simulatedTime, lastDataTimestamp }) {
   const [hov, setHov] = useState(null);
   const scrollRef = useRef(null);
@@ -810,53 +1059,110 @@ function NavBar({ currentPage, setCurrentPage, th, simulatedTime, lastDataTimest
     'pressure': 'Nyomás', 'brightness': 'Fény', 'precipitation': 'Eső', 'wind': 'Szél'
   };
 
-  /* ── VÉGLEGES JAVÍTÁS: Premium, fluid (Lerp) görgetőmotor ── */
+  /* ── VÉGLEGES JAVÍTÁS: Ultra-sima görgetőmotor MINIMÁLIS SEBESSÉGLIMITTEL ── */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     let target = el.scrollLeft;
+    let currentFloat = el.scrollLeft;
     let rafId = null;
+    let snapTimer = null;
 
-    // Ha az ember érintőképernyőn (Mobilon) húzza az ujjával, szinkronizáljuk a célt
-    const syncTarget = () => { target = el.scrollLeft; };
+    const syncTarget = () => { 
+      target = el.scrollLeft; 
+      currentFloat = el.scrollLeft;
+      cancelAnimationFrame(rafId);
+    };
 
     const onWheel = (e) => {
-      if (e.deltaY !== 0) {
+      // Csak a függőleges görgőt alakítjuk át. A trackpadet (deltaX) meghagyjuk natívnak.
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         
-        // Célpont kiszámítása (kattanásonként 150 pixelt tolunk rajta)
         const maxScroll = el.scrollWidth - el.clientWidth;
         target = Math.max(0, Math.min(target + Math.sign(e.deltaY) * 150, maxScroll));
 
-        // Animációs hurok (Lerp)
         const animate = () => {
-          const current = el.scrollLeft;
-          const diff = target - current;
+          const diff = target - currentFloat;
           
-          // 0.08 a lágysági együttható (minél kisebb, annál lágyabban siklik)
           if (Math.abs(diff) > 0.5) {
-            el.scrollLeft = current + diff * 0.08; 
+            // A varázslat: Kiszámoljuk a sebességet (a hátralévő távolság 12%-a)
+            let velocity = diff * 0.12; 
+            
+            // GARANCIA AZ AKADÁS ELLEN: A sebesség sosem eshet 1 pixel / képkocka alá!
+            // Így a legvégén is stabil 60 FPS-sel, egyenletesen fejezi be a mozgást.
+            if (Math.abs(velocity) < 1) {
+              velocity = Math.sign(velocity) * 1;
+            }
+
+            // Ha az utolsó ugrás már túllépne a célon, pont a célra tesszük
+            if (Math.abs(velocity) >= Math.abs(diff)) {
+              currentFloat = target;
+            } else {
+              currentFloat += velocity;
+            }
+
+            el.scrollLeft = currentFloat; 
             rafId = requestAnimationFrame(animate);
           } else {
+            currentFloat = target;
             el.scrollLeft = target;
           }
         };
 
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(animate);
+      } else {
+        syncTarget(); 
       }
+    };
+
+    // Visszapattanó (Snap) logika a bal szél levágása ellen, ugyanezzel a sima sebességgel
+    const onScroll = () => {
+      clearTimeout(snapTimer);
+      snapTimer = setTimeout(() => {
+        if (el.scrollLeft > 0 && el.scrollLeft < 15) {
+          target = 0;
+          const snapAnimate = () => {
+            const diff = target - currentFloat;
+            if (Math.abs(diff) > 0.5) {
+              let velocity = diff * 0.15; 
+              
+              // Itt is alkalmazzuk a sebességlimitet
+              if (Math.abs(velocity) < 1) {
+                velocity = Math.sign(velocity) * 1;
+              }
+
+              if (Math.abs(velocity) >= Math.abs(diff)) {
+                currentFloat = target;
+              } else {
+                currentFloat += velocity;
+              }
+
+              el.scrollLeft = currentFloat;
+              rafId = requestAnimationFrame(snapAnimate);
+            } else {
+              currentFloat = 0;
+              el.scrollLeft = 0;
+            }
+          };
+          cancelAnimationFrame(rafId);
+          rafId = requestAnimationFrame(snapAnimate);
+        }
+      }, 150);
     };
 
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('touchstart', syncTarget, { passive: true });
-    el.addEventListener('mouseenter', syncTarget, { passive: true });
+    el.addEventListener('scroll', onScroll, { passive: true });
 
     return () => {
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('touchstart', syncTarget);
-      el.removeEventListener('mouseenter', syncTarget);
+      el.removeEventListener('scroll', onScroll);
       cancelAnimationFrame(rafId);
+      clearTimeout(snapTimer);
     };
   }, []);
 
@@ -867,12 +1173,11 @@ function NavBar({ currentPage, setCurrentPage, th, simulatedTime, lastDataTimest
       boxShadow: `0 12px 40px rgba(0,0,0,0.12), ${innerLight}`,
     }}>
       
-      {/* ── 1. RÉSZ: FIX LOGÓ ÉS SYNC RING ── */}
       <div className="nav-logo" style={{ 
         borderRight: `1px solid ${th.border}`, 
-        paddingRight: 18,  /* Vonal ELŐTTI tér (balra) */
-        marginRight: 14,   /* Vonal UTÁNI tér (gombok és a vonal között) */
-        paddingLeft: 6     /* Kis extra hely bal oldalon az üveg szélétől */
+        paddingRight: 18,  
+        marginRight: 2,   /* Visszakaptad az App_2 tökéletes elrendezését! */
+        paddingLeft: 6     
       }}>
         <IoTSyncRing 
           lastDataTimestamp={lastDataTimestamp} 
@@ -881,19 +1186,31 @@ function NavBar({ currentPage, setCurrentPage, th, simulatedTime, lastDataTimest
         />
       </div>
       
-      {/* ── 2. RÉSZ: FLUID GÖRGETHETŐ GOMBOK ── */}
-      <div className="smart-nav-scroll" ref={scrollRef}>
+      {/* Kőbe vésett, garantáltan működő inline CSS az eltűnő gombok ellen */}
+      <div className="smart-nav-scroll" ref={scrollRef} style={{
+        display: 'flex', alignItems: 'center', gap: 4, 
+        paddingLeft: 12, /* Az árnyék védőzónája! */
+        paddingRight: 32, height: '100%', flex: 1, 
+        overflowX: 'auto', msOverflowStyle: 'none', scrollbarWidth: 'none',
+        WebkitMaskImage: 'linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%)',
+        maskImage: 'linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%)',
+        transform: 'translateZ(0)', willChange: 'scroll-position'
+      }}>
         {NAV_PAGES.map(({ id, icon, label }) => {
           const active = currentPage === id, isHov = hov === id;
           return (
             <button key={id} className={`nav-btn ${active ? 'active' : ''}`}
               onClick={() => setCurrentPage(id)} onMouseEnter={() => setHov(id)} onMouseLeave={() => setHov(null)}
               style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
+                borderRadius: 99, cursor: 'pointer', border: '1px solid transparent',
+                outline: 'none', flexShrink: 0, whiteSpace: 'nowrap',
+                transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
                 background: active ? (th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.08)') : isHov ? (th.id === 'day' ? 'rgba(15,23,42,0.02)' : 'rgba(255,255,255,0.03)') : 'transparent',
                 color: active ? th.p : isHov ? th.t1 : th.t2,
               }}>
-              <span className="nav-icon">{icon}</span>
-              <span className="nav-label" style={{ fontWeight: active ? 600 : 400 }}>{label}</span>
+              <span className="nav-icon" style={{ fontSize: 12 }}>{icon}</span>
+              <span className="nav-label" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: active ? 600 : 400 }}>{label}</span>
               <span className="nav-label-mobile" style={{ fontWeight: active ? 600 : 400 }}>{mobileLabels[id]}</span>
             </button>
           );
@@ -938,7 +1255,7 @@ function ToastContainer({ toasts, th }) {
 }
 
 /* ═══════════════ DYNAMIC FORMAT PILL (MOBILE & DESKTOP) ═══════════════ */
-function FormatPill({ exportFormat, setExportFormat, th }) {
+function FormatPill({ exportFormat, setExportFormat, th, isFetching = false }) {
   // A korábbi 'hov' (hover) állapotot átneveztük isOpen-re, mert most már koppintás is nyithatja
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef(null);
@@ -970,14 +1287,15 @@ function FormatPill({ exportFormat, setExportFormat, th }) {
       onMouseEnter={() => setIsOpen(true)} 
       onMouseLeave={() => setIsOpen(false)}
       // Mobil (Érintés logikája)
-      onClick={() => setIsOpen(true)} 
+      onClick={() => { if (!isFetching) setIsOpen(true); }} 
       style={{ 
         display: 'flex', alignItems: 'center', 
         background: th.id === 'day' ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.05)', 
         borderRadius: 99, padding: 4, gap: isOpen ? 4 : 0,
         border: `1px solid ${th.border}`,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', // Az eredeti Apple-stílusú rugós animáció
-        cursor: 'pointer', height: 40
+        cursor: isFetching ? 'not-allowed' : 'pointer', height: 40,
+        opacity: isFetching ? 0.5 : 1, pointerEvents: isFetching ? 'none' : 'auto'
       }}
     >
       {formats.map(fmt => {
@@ -1023,195 +1341,32 @@ function FormatPill({ exportFormat, setExportFormat, th }) {
   );
 }
 
-/* ═══════════════ KOPPINTÁSRA NYÍLÓ OKOSKAPSZULA (SMART EXPORT PILL) ═══════════════ */
-function SmartExportPill({ onExport, th, color }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const pillRef = useRef(null);
-  const formats = ['csv', 'json', 'xml'];
 
-  // Biztonsági háló: Bezárás, ha bárhova máshova kattintasz/koppintasz
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (pillRef.current && !pillRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
 
-  return (
-    <div 
-      ref={pillRef}
-      style={{ 
-        display: 'flex', alignItems: 'center', 
-        // Zárt állapotban a szenzor saját színe, nyitottan egy halvány üveghatás
-        background: isOpen ? (th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.08)') : color, 
-        borderRadius: 99, padding: 4, gap: isOpen ? 6 : 0,
-        border: `1px solid ${isOpen ? th.border : 'transparent'}`,
-        boxShadow: isOpen ? 'none' : `0 4px 12px ${color}40`,
-        transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)', 
-        height: 44,
-        cursor: isOpen ? 'default' : 'pointer'
-      }}
-      onClick={() => { if (!isOpen) setIsOpen(true); }}
-    >
-      {/* ── Nyitó felirat / Bezáró ikon ── */}
-      <div
-        onClick={(e) => { if (isOpen) { e.stopPropagation(); setIsOpen(false); } }}
-        style={{
-          padding: isOpen ? '0 10px' : '0 20px', 
-          color: isOpen ? th.t2 : '#ffffff',
-          fontWeight: 600, fontFamily: "'Inter', sans-serif", fontSize: 13,
-          display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
-          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          cursor: 'pointer'
-        }}
-      >
-        <span style={{ 
-          transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', 
-          transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)', 
-          fontSize: 16, display: 'flex', alignItems: 'center' 
-        }}>
-          {isOpen ? '×' : '↓'}
-        </span>
-        <span style={{ 
-          display: 'inline-block', overflow: 'hidden', 
-          maxWidth: isOpen ? 0 : 120, opacity: isOpen ? 0 : 1, 
-          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)' 
-        }}>Letöltés</span>
-      </div>
-
-      {/* ── Szétnyíló opciók ── */}
-      <div style={{ 
-        display: 'flex', alignItems: 'center', gap: isOpen ? 4 : 0, overflow: 'hidden',
-        maxWidth: isOpen ? 250 : 0, opacity: isOpen ? 1 : 0,
-        transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
-        {formats.map(fmt => (
-          <button
-            key={fmt}
-            onClick={(e) => { e.stopPropagation(); onExport(fmt); setIsOpen(false); }}
-            style={{
-              padding: '0 14px', height: '36px', border: 'none', borderRadius: 99,
-              background: th.id === 'day' ? '#ffffff' : th.card,
-              color: th.t1, boxShadow: th.id === 'day' ? '0 2px 8px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.3)',
-              fontWeight: 700, cursor: 'pointer',
-              fontFamily: "'Inter', sans-serif", fontSize: 11, letterSpacing: '.04em', 
-              textTransform: 'uppercase', whiteSpace: 'nowrap',
-              transition: 'transform 0.1s',
-            }}
-            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
-            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            {fmt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════ PREMIUM IOS EXPORT MENU ═══════════════ */
-function ExportMenu({ onExport, th, color }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  // Bezárja a menüt, ha bárhova máshova kattintasz a képernyőn
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  const handleSelect = (fmt) => {
-    onExport(fmt); // Átadjuk a formátumot a szülő komponensnek (pl. CSV)
-    setIsOpen(false); // Visszazárjuk a menüt
-  };
-
-  return (
-    <div style={{ position: 'relative', display: 'inline-block' }} ref={menuRef}>
-      
-      {/* ── Fő Letöltés Gomb (Minden oldalon a saját színével) ── */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          padding: '10px 24px', background: color, color: '#FFFFFF', border: 'none',
-          borderRadius: 10, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13,
-          transition: 'background 0.2s, transform 0.1s cubic-bezier(0.16, 1, 0.3, 1)', 
-          display: 'flex', alignItems: 'center', gap: 8,
-          boxShadow: `0 4px 12px ${color}40`
-        }}
-        // Finom "benyomódás" effektus kattintáskor
-        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
-        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-      >
-        ↓ Adatok Letöltése
-      </button>
-
-      {/* ── Lebegő Menü (Popover) ── */}
-      <div style={{
-        position: 'absolute', bottom: '100%', right: 0, marginBottom: 12,
-        background: th.id === 'day' ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)',
-        backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
-        border: `1px solid ${th.border}`, borderRadius: 16, padding: 6,
-        boxShadow: th.id === 'day' ? '0 10px 40px rgba(0,0,0,0.1)' : '0 20px 40px rgba(0,0,0,0.4)',
-        display: 'flex', flexDirection: 'column', gap: 4, minWidth: 170,
-        // Az animáció varázslata: lentről-jobbról tágul ki (scale) és úszik be (translateY)
-        opacity: isOpen ? 1 : 0, 
-        transform: isOpen ? 'translateY(0) scale(1)' : 'translateY(10px) scale(0.95)',
-        transformOrigin: 'bottom right',
-        pointerEvents: isOpen ? 'auto' : 'none', 
-        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-        zIndex: 100
-      }}>
-        {[
-          { id: 'csv', icon: '📄', label: 'CSV formátum' },
-          { id: 'json', icon: '📦', label: 'JSON formátum' },
-          { id: 'xml', icon: '🌐', label: 'XML formátum' }
-        ].map(fmt => (
-          <button
-            key={fmt.id}
-            onClick={() => handleSelect(fmt.id)}
-            style={{
-              background: 'transparent', color: th.t1,
-              padding: '10px 14px', border: 'none', borderRadius: 10, textAlign: 'left',
-              cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
-              transition: 'background 0.2s', display: 'flex', alignItems: 'center', gap: 10
-            }}
-            // Hover állapot a menüpontokon
-            onMouseEnter={e => e.currentTarget.style.background = th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.06)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <span style={{ fontSize: 16, filter: th.id === 'day' ? 'none' : 'brightness(1.5)' }}>{fmt.icon}</span>
-            {fmt.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════ SENSOR LAYOUT (DRY ARCHITEKTÚRA) ═══════════════ */
 function SensorLayout({ title, icon, color, th, show, children }) {
   return (
     <div className="page-container">
-      <header style={{ marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
+      {/* 1. JAVÍTÁS: A fejléc megkapta a flex elrendezést, hogy az óra jobbra kerüljön */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
         
-        {/* Innen tűnt el a régi zöld pötty és a felirat! */}
-        
-        <h1 style={{ ...ui, fontSize: 32, fontWeight: 700, color: th.hTitle, margin: 0, display: 'flex', alignItems: 'center', gap: 12, letterSpacing: '-0.02em' }}>
-          <span style={{ color }}>{icon}</span> {title} Analízis
-        </h1>
-        <p style={{ ...ui, fontSize: 14, color: th.hSub, marginTop: 6, opacity: 0.8 }}>
-          Történeti adatok, trendek és adatexportálás közvetlenül az InfluxDB adatbázisból.
-        </p>
+        <TextAura>
+          <div>
+            <h1 style={{ ...ui, fontSize: 32, fontWeight: 700, color: th.hTitle, margin: 0, display: 'flex', alignItems: 'center', gap: 12, letterSpacing: '-0.02em', textShadow: '0 4px 24px rgba(0,0,0,0.3), 0 0 6px rgba(0,0,0,0.15)' }}>
+              <span style={{ color, filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.2))' }}>{icon}</span> {title} Analízis
+            </h1>
+            <p style={{ ...ui, fontSize: 14, color: th.hSub, marginTop: 6, opacity: 0.8, textShadow: '0 2px 12px rgba(0,0,0,0.3), 0 0 4px rgba(0,0,0,0.15)' }}>
+              Történeti adatok, trendek és adatexportálás közvetlenül az InfluxDB adatbázisból.
+            </p>
+          </div>
+        </TextAura>
+
+        {/* 2. JAVÍTÁS: Itt hívjuk meg az okos, önálló órát az Aloldalakon is! */}
+        <TextAura>
+          <LiveHeaderTime th={th} />
+        </TextAura>
+
       </header>
 
       <div className="mg" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 20 }}>
@@ -1221,115 +1376,14 @@ function SensorLayout({ title, icon, color, th, show, children }) {
   );
 }
 
-/* ═══════════════ GENERIC SENSOR PAGE (MOCKUP) ═══════════════ */
-function GenericSensorPage({ title, value, unit, color, icon, th }) {
-  const [show, setShow] = useState(false);
-  const [exportFormat, setExportFormat] = useState('csv');
 
-  useEffect(() => {
-    setShow(false);
-    const t = setTimeout(() => setShow(true), 90);
-    return () => clearTimeout(t);
-  }, [title]); 
-
-  const handleExport = () => {
-    alert(`Demó: Adatok letöltése megkezdve [${exportFormat.toUpperCase()}] formátumban...`);
-  };
-
-  return (
-    <SensorLayout title={title} icon={icon} color={color} th={th} show={show}>
-      {/* ── BAL OLDAL (8 oszlop): DIAGRAM + EXPORT ── */}
-      <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <Card show={show} delay={80} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${th.border}`, paddingBottom: 16, marginBottom: 16 }}>
-            <Lbl t={th}>Idősoros Trendek</Lbl>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {['1 Óra', '1 Nap', '1 Hét', '1 Hónap'].map((btn, i) => (
-                <button key={btn} style={{ 
-                  background: i===2 ? (th.id==='day'?'rgba(15,23,42,0.05)':'rgba(255,255,255,0.08)') : 'transparent', 
-                  border: '1px solid transparent', color: i===2 ? th.p : th.t2,
-                  padding: '5px 14px', borderRadius: 99, ...ui, fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s'
-                }}>{btn}</button>
-              ))}
-            </div>
-          </div>
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', opacity: 0.35 }}>
-            <span style={{ ...tech, color: th.t2, fontSize: 15 }}>[ 📈 Dinamikus Recharts Grafikon Helye ]</span>
-          </div>
-        </Card>
-
-        {/* ── EXPORT KÁRTYA (Vízszintes elrendezés) ── */}
-        <Card show={show} delay={260} t={th}>
-          <Lbl t={th}>Adat Exportálás</Lbl>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
-            <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A kiválasztott időtáv nyers telemetria adatsorának letöltése.
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, width: 220 }}>
-                {['CSV', 'JSON', 'XML'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setExportFormat(fmt.toLowerCase())}
-                    style={{
-                      flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                      background: exportFormat === fmt.toLowerCase() ? (th.id === 'day' ? '#fff' : '#1e293b') : 'transparent',
-                      color: exportFormat === fmt.toLowerCase() ? th.t1 : th.t2,
-                      boxShadow: exportFormat === fmt.toLowerCase() ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                      fontWeight: exportFormat === fmt.toLowerCase() ? 600 : 500,
-                      cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'Inter', sans-serif", fontSize: 12
-                    }}
-                  >
-                    {fmt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
-                ↓ Letöltés
-              </button>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* ── JOBB OLDAL (4 oszlop): AKTUÁLIS + STATISZTIKA ── */}
-      <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {/* JAVÍTVA: flex: 1 és justifyContent: space-between hozzáadva a tökéletes igazodásért */}
-        <Card show={show} delay={140} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <Lbl t={th}>Aktuális Érték</Lbl>
-            <div style={{ ...tech, fontSize: 46, fontWeight: 700, color: color, lineHeight: 1, marginTop: 8, letterSpacing: '-0.03em' }}>
-              {value} <span style={{ ...ui, fontSize: 18, color: th.t2, fontWeight: 400, letterSpacing: 0, marginLeft: 6 }}>{unit}</span>
-            </div>
-          </div>
-          <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${th.border}` }}>
-            {[
-              ['Minimum (7 nap)', `${(value * 0.8).toFixed(1)} ${unit}`],
-              ['Maximum (7 nap)', `${(value * 1.2).toFixed(1)} ${unit}`],
-              ['Időszaki Átlag', `${value} ${unit}`],
-              ['Trend / Változás', '+1.2 / nap ↗'],
-            ].map(([l, v]) => (
-              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ ...ui, fontSize: 13, color: th.t2 }}>{l}</span>
-                <span style={{ ...tech, fontSize: 13, color: th.t1, fontWeight: 500 }}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </SensorLayout>
-  );
-}
 
 /* ═══════════════ TEMPERATURE PAGE (GHOSTING UPDATE) ═══════════════ */
 function TemperaturePage({ th, addToast }) {
-  const [show, setShow] = useState(false);
   
   // 1. A VARÁZSLAT: Kettéválasztjuk a gombot és az adatot!
-  const [displayRange, setDisplayRange] = useState('1d');   // Ezt mutatja a grafikon (késik)
-  const [selectedRange, setSelectedRange] = useState('1d'); // Ezt mutatja a gomb (azonnali)
-  const [isFetching, setIsFetching] = useState(false);      // Ez kapcsolja a Ghosting effektust
-
+  const [show, setShow] = useState(false);
+  const [range, setRange] = useState('1d'); // Egységesítve a többi oldallal
   const [activeBtn, setActiveBtn] = useState(null);
   const [exportFormat, setExportFormat] = useState('csv');
 
@@ -1339,22 +1393,9 @@ function TemperaturePage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  // 2. A "Nehéz Lekérdezés" szimulátor
-  const handleRangeChange = (newRange) => {
-    if (newRange === displayRange) return;
-    
-    setSelectedRange(newRange); // A gomb azonnal aktív lesz
-    setIsFetching(true);        // Bekapcsoljuk az elmosódást a grafikonon
-
-    // Szimuláljuk, hogy 1.2 másodpercig tart betölteni az új adatokat az InfluxDB-ből
-    setTimeout(() => {
-      setDisplayRange(newRange); // Megjött az adat, frissítjük a grafikont
-      setIsFetching(false);      // Kikapcsoljuk a szellemképet
-    }, 1200);
-  };
-
-  // Az adatok mostantól a displayRange-hez (a lemaradó, valós adathoz) igazodnak
-  const data = TEMP_DATASETS[displayRange];
+  // Meghívjuk a felokosított Hookot
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, TEMP_DATASETS);
+  const data = chartData;
   const temps = data.map(d => d.temp);
   const minT = Math.min(...temps);
   const maxT = Math.max(...temps);
@@ -1384,34 +1425,34 @@ function TemperaturePage({ th, addToast }) {
     { id: '1mo', label: '1 Hónap' },
   ];
 
-  /* Fájlgenerátor funkciók */
+  /* Fájlgenerátor funkciók (Hőmérséklethez igazítva) */
   const downloadCSV = () => {
-    const rows = ['Időpont,Fényerő (Lux),UV Index', ...data.map(d => `${d.t},${d.lux},${d.uv}`)].join('\n');
+    const rows = ['Időpont,Hőmérséklet (°C)', ...data.map(d => `${d.t},${d.temp}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, unit: '°C', records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <unit>C</unit>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
-      xml += `    <record>\n      <time>${d.t}</time>\n      <lux>${d.lux}</lux>\n      <uv>${d.uv}</uv>\n    </record>\n`;
+      xml += `    <record>\n      <time>${d.t}</time>\n      <temp>${d.temp}</temp>\n    </record>\n`;
     });
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `homerseklet_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -1478,12 +1519,20 @@ function TemperaturePage({ th, addToast }) {
             flex: 1, width: '100%', minHeight: 280, position: 'relative',
             filter: isFetching ? 'blur(4px) grayscale(20%)' : 'blur(0px) grayscale(0%)',
             opacity: isFetching ? 0.6 : 1,
+            transform: isFetching ? 'translateY(4px) scale(0.99)' : 'translateY(0) scale(1)',
+            transition: 'filter 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+            pointerEvents: isFetching ? 'none' : 'auto'
+
+            /*
+            flex: 1, width: '100%', minHeight: 280, position: 'relative',
+            filter: isFetching ? 'blur(4px) grayscale(20%)' : 'blur(0px) grayscale(0%)',
+            opacity: isFetching ? 0.6 : 1,
             transition: 'filter 0.5s ease, opacity 0.5s ease',
             pointerEvents: isFetching ? 'none' : 'auto'
+            */
           }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
-                <defs>
+              <AreaChart key={displayRange} data={data} margin={{ top: 8, right: 28, bottom: 0, left: -20 }}>                <defs>
                   <linearGradient id="gTempFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={th.w} stopOpacity={0.25} />
                     <stop offset="70%" stopColor={th.w} stopOpacity={0.05} />
@@ -1494,8 +1543,15 @@ function TemperaturePage({ th, addToast }) {
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[Math.floor(minT - 1), Math.ceil(maxT + 1)]} tickFormatter={v => `${v}°`} />
                 <Tooltip content={<TempTip />} cursor={{ stroke: `${th.w}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
-                <ReferenceLine y={avgT} stroke={`${th.p}60`} strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `Átl. ${avgT}°C`, position: 'insideTopRight', fill: th.p, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", dy: -6 }} />
-                <Area type="monotone" dataKey="temp" stroke={th.w} strokeWidth={2.5} fill="url(#gTempFill)" dot={false} activeDot={{ r: 5, fill: th.w, stroke: th.id === 'day' ? '#fff' : '#0a1426', strokeWidth: 2 }} />
+                <Area
+                  type="monotone" dataKey="temp" stroke={th.w} strokeWidth={2.5} fill="url(#gTempFill)" dot={false}
+                  activeDot={{ r: 5, fill: th.w, stroke: th.id === 'day' ? '#fff' : '#0a1426', strokeWidth: 2 }}
+                  isAnimationActive={true}
+                  animationDuration={900}
+                  animationEasing="ease-out"
+                />
+                <ReferenceLine y={avgT} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5}
+                  label={(p) => <RefLineTag viewBox={p.viewBox} text={`Átl. ${avgT}°C`} color={th.t2} th={th} />} />
               </AreaChart>
             </ResponsiveContainer>
 
@@ -1538,9 +1594,9 @@ function TemperaturePage({ th, addToast }) {
               A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
             </div>
           </div>
@@ -1617,19 +1673,25 @@ function TemperaturePage({ th, addToast }) {
             </div>
             <div style={{ height: 6, background: `${th.t3}30`, borderRadius: 99, position: 'relative', overflow: 'visible' }}>
               <div style={{
-                position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
-                background: `linear-gradient(90deg, #0EA5E9, #EF4444)`,
-                width: `${Math.min(100, ((currentT - minT) / (maxT - minT)) * 100)}%`,
-                transition: 'width 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                position: 'absolute', left: 0, top: 0, height: '100%', width: '100%', borderRadius: 99,
+                background: `linear-gradient(90deg, ${th.w}40, ${th.w})`,
+                transformOrigin: 'left',
+                transform: `scaleX(${Math.max(0, Math.min(100, ((currentT - minT) / (maxT - minT)) * 100)) / 100})`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
               }} />
               <div style={{
-                position: 'absolute',
-                left: `${Math.min(100, ((currentT - minT) / (maxT - minT)) * 100)}%`,
-                top: '50%', transform: 'translate(-50%,-50%)',
-                width: 12, height: 12, borderRadius: '50%',
-                background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`,
-                transition: 'left 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
-              }} />
+                position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
+                transform: `translateX(${Math.max(0, Math.min(100, ((currentT - minT) / (maxT - minT)) * 100))}%)`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: '50%', transform: 'translate(-50%,-50%)',
+                  width: 12, height: 12, borderRadius: '50%',
+                  background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`
+                }} />
+              </div>
             </div>
           </div>
         </Card>
@@ -1658,7 +1720,8 @@ function HumidityPage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = HUMIDITY_DATASETS[range];
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, HUMIDITY_DATASETS);
+  const data = chartData;
   const hums = data.map(d => d.hum);
   const minH = Math.min(...hums);
   const maxH = Math.max(...hums);
@@ -1672,7 +1735,7 @@ function HumidityPage({ th, addToast }) {
 
   /* Meteorológiai trend skála: Páratartalom logikával */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[range])).toFixed(2));
+  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 2.0) { trendColor = '#0284C7'; trendLabel = 'Erős párásodás'; trendArrow = '⇡'; }
@@ -1699,21 +1762,21 @@ function HumidityPage({ th, addToast }) {
     const rows = ['Időpont,Páratartalom (%)', ...data.map(d => `${d.t},${d.hum}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, unit: '%', records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, unit: '%', records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n    <unit>%</unit>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <unit>%</unit>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
       xml += `    <record>\n      <time>${d.t}</time>\n      <value>${d.hum}</value>\n    </record>\n`;
@@ -1721,7 +1784,7 @@ function HumidityPage({ th, addToast }) {
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `paratartalom_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -1785,9 +1848,10 @@ function HumidityPage({ th, addToast }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          {/* Ghosting effekt: elmosódás + szürkítés + fénycsóva, mint a Hőmérséklet oldalon */}
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <AreaChart key={displayRange} data={data} margin={{ top: 8, right: 28, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="gHumFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={th.p} stopOpacity={0.25} />
@@ -1799,13 +1863,15 @@ function HumidityPage({ th, addToast }) {
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
                 <Tooltip content={<HumTip />} cursor={{ stroke: `${th.p}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
-                <ReferenceLine y={avgH} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `Átl. ${avgH}%`, position: 'insideTopRight', fill: th.t2, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", dy: -6 }} />
                 <Area type="monotone" dataKey="hum" stroke={th.p} strokeWidth={2.5} fill="url(#gHumFill)" dot={false} activeDot={{ r: 5, fill: th.p, stroke: th.id === 'day' ? '#fff' : '#0a1426', strokeWidth: 2 }} />
+                <ReferenceLine y={avgH} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5}
+                  label={(p) => <RefLineTag viewBox={p.viewBox} text={`Átl. ${avgH}%`} color={th.t2} th={th} />} />
               </AreaChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
 
-          <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
             {[[th.p, 'Relatív Páratartalom (%)']].map(([col, lbl]) => (
               <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 20, height: 2.5, background: col, borderRadius: 99 }} />
@@ -1813,7 +1879,7 @@ function HumidityPage({ th, addToast }) {
               </div>
             ))}
             <div style={{ marginLeft: 'auto', ...tech, fontSize: 11, color: th.t3 }}>
-              {data.length} mérési pont · {range === '1h' ? '15 perces' : range === '1d' ? 'óránkénti' : range === '1w' ? '6 órás' : 'napi'} felbontás
+              {data.length} mérési pont · {displayRange === '1h' ? '15 perces' : displayRange === '1d' ? 'óránkénti' : displayRange === '1w' ? '6 órás' : 'napi'} felbontás
             </div>
           </div>
         </Card>
@@ -1823,18 +1889,13 @@ function HumidityPage({ th, addToast }) {
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
+              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
             </p>
-            
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              
-              {/* EREDETI FormatPill (már felokosítva érintésre) */}
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: th.p, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
-
             </div>
           </div>
         </Card>
@@ -1845,7 +1906,7 @@ function HumidityPage({ th, addToast }) {
         
         <Card show={show} delay={140} t={th}>
           <Lbl t={th}>Trend & Változási Sebesség</Lbl>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, ...cardFadeStyle }}>
             <div style={{
               width: 64, height: 64, borderRadius: 20,
               background: ratePerHour >= -0.5 && ratePerHour <= 0.5 ? `${th.t3}22` : `${trendColor}22`,
@@ -1859,11 +1920,11 @@ function HumidityPage({ th, addToast }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}%
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[range]} óta
+                az előző {lookback}× {intervalLabels[displayRange]} óta
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...cardFadeStyle }}>
             <div>
               <div style={{ ...ui, fontSize: 11, color: th.lbl, letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 3 }}>Óránkénti ráta</div>
               <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: trendColor }}>
@@ -1880,7 +1941,7 @@ function HumidityPage({ th, addToast }) {
         <Card show={show} delay={200} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <Lbl t={th}>Statisztikák & Levegőminőség</Lbl>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, ...cardFadeStyle }}>
               {[
                 { label: 'Minimum (Időszak)', value: `${minH}%`, color: th.t1, icon: '▼' },
                 { label: 'Maximum (Időszak)', value: `${maxH}%`, color: th.t1, icon: '▲' },
@@ -1901,7 +1962,7 @@ function HumidityPage({ th, addToast }) {
             </div>
           </div>
           
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 11, color: th.t3, marginBottom: 6 }}>
               <span>0% (Száraz)</span>
               <span style={{ color: th.t2 }}>Jelenlegi: {currentH}%</span>
@@ -1909,19 +1970,25 @@ function HumidityPage({ th, addToast }) {
             </div>
             <div style={{ height: 6, background: `${th.t3}30`, borderRadius: 99, position: 'relative', overflow: 'visible' }}>
               <div style={{
-                position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
+                position: 'absolute', left: 0, top: 0, height: '100%', width: '100%', borderRadius: 99,
                 background: `linear-gradient(90deg, #F59E0B, #10B981, #0284C7)`,
-                width: `${Math.min(100, currentH)}%`,
-                transition: 'width 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                transformOrigin: 'left',
+                transform: `scaleX(${Math.max(0, Math.min(100, currentH)) / 100})`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
               }} />
               <div style={{
-                position: 'absolute',
-                left: `${Math.min(100, currentH)}%`,
-                top: '50%', transform: 'translate(-50%,-50%)',
-                width: 12, height: 12, borderRadius: '50%',
-                background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`,
-                transition: 'left 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
-              }} />
+                position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
+                transform: `translateX(${Math.max(0, Math.min(100, currentH))}%)`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: '50%', transform: 'translate(-50%,-50%)',
+                  width: 12, height: 12, borderRadius: '50%',
+                  background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`
+                }} />
+              </div>
             </div>
           </div>
         </Card>
@@ -1950,7 +2017,8 @@ function PressurePage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = PRESSURE_DATASETS[range];
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, PRESSURE_DATASETS);
+  const data = chartData;
   const press = data.map(d => d.pres);
   const minP = Math.min(...press);
   const maxP = Math.max(...press);
@@ -1964,7 +2032,7 @@ function PressurePage({ th, addToast }) {
 
   /* Meteorológiai trend skála: Légnyomás (Barométer) logikával */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[range])).toFixed(2));
+  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 1.0) { trendColor = '#10B981'; trendLabel = 'Gyorsan javuló idő'; trendArrow = '⇡'; }
@@ -1991,21 +2059,21 @@ function PressurePage({ th, addToast }) {
     const rows = ['Időpont,Légnyomás (hPa)', ...data.map(d => `${d.t},${d.pres}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, unit: 'hPa', records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, unit: 'hPa', records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n    <unit>hPa</unit>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <unit>hPa</unit>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
       xml += `    <record>\n      <time>${d.t}</time>\n      <value>${d.pres}</value>\n    </record>\n`;
@@ -2013,7 +2081,7 @@ function PressurePage({ th, addToast }) {
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `legnyomas_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -2076,9 +2144,9 @@ function PressurePage({ th, addToast }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <AreaChart key={displayRange} data={data} margin={{ top: 8, right: 28, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="gPresFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={th.v} stopOpacity={0.25} />
@@ -2090,13 +2158,15 @@ function PressurePage({ th, addToast }) {
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[Math.floor(minP - 2), Math.ceil(maxP + 2)]} tickFormatter={v => `${v}`} />
                 <Tooltip content={<PresTip />} cursor={{ stroke: `${th.v}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
-                <ReferenceLine y={avgP} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `Átl. ${avgP}`, position: 'insideTopRight', fill: th.t2, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", dy: -6 }} />
                 <Area type="monotone" dataKey="pres" stroke={th.v} strokeWidth={2.5} fill="url(#gPresFill)" dot={false} activeDot={{ r: 5, fill: th.v, stroke: th.id === 'day' ? '#fff' : '#0a1426', strokeWidth: 2 }} />
+                <ReferenceLine y={avgP} stroke={`${th.t2}60`} strokeDasharray="6 4" strokeWidth={1.5}
+                  label={(p) => <RefLineTag viewBox={p.viewBox} text={`Átl. ${avgP}`} color={th.t2} th={th} />} />
               </AreaChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
 
-          <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, opacity: isFetching ? 0.4 : 1, transition: 'opacity 0.5s' }}>
             {[[th.v, 'Abszolút Légnyomás (hPa)']].map(([col, lbl]) => (
               <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 20, height: 2.5, background: col, borderRadius: 99 }} />
@@ -2104,7 +2174,7 @@ function PressurePage({ th, addToast }) {
               </div>
             ))}
             <div style={{ marginLeft: 'auto', ...tech, fontSize: 11, color: th.t3 }}>
-              {data.length} mérési pont · {range === '1h' ? '15 perces' : range === '1d' ? 'óránkénti' : range === '1w' ? '6 órás' : 'napi'} felbontás
+              {data.length} mérési pont · {displayRange === '1h' ? '15 perces' : displayRange === '1d' ? 'óránkénti' : displayRange === '1w' ? '6 órás' : 'napi'} felbontás
             </div>
           </div>
         </Card>
@@ -2114,13 +2184,12 @@ function PressurePage({ th, addToast }) {
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
+              A <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> időszak {data.length} mérési pontja tölthető le.
             </p>
-            
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.v, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s', whiteSpace: 'nowrap' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: th.v, color: '#FFFFFF', border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
             </div>
           </div>
@@ -2132,7 +2201,7 @@ function PressurePage({ th, addToast }) {
         
         <Card show={show} delay={140} t={th}>
           <Lbl t={th}>Barometrikus Trend</Lbl>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, ...cardFadeStyle }}>
             <div style={{
               width: 64, height: 64, borderRadius: 20,
               background: ratePerHour >= -0.2 && ratePerHour <= 0.2 ? `${th.t3}22` : `${trendColor}22`,
@@ -2146,11 +2215,11 @@ function PressurePage({ th, addToast }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[range]} óta
+                az előző {lookback}× {intervalLabels[displayRange]} óta
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...cardFadeStyle }}>
             <div>
               <div style={{ ...ui, fontSize: 11, color: th.lbl, letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 3 }}>Óránkénti ráta</div>
               <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: trendColor }}>
@@ -2167,7 +2236,7 @@ function PressurePage({ th, addToast }) {
         <Card show={show} delay={200} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <Lbl t={th}>Statisztikák & Időjelzés</Lbl>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, ...cardFadeStyle }}>
               {[
                 { label: 'Helyi Minimum', value: `${minP} hPa`, color: th.t1, icon: '▼' },
                 { label: 'Helyi Maximum', value: `${maxP} hPa`, color: th.t1, icon: '▲' },
@@ -2188,7 +2257,7 @@ function PressurePage({ th, addToast }) {
             </div>
           </div>
           
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 11, color: th.t3, marginBottom: 6 }}>
               <span>Ciklon (990)</span>
               <span style={{ color: th.t2 }}>Jelenlegi: {currentP}</span>
@@ -2196,19 +2265,25 @@ function PressurePage({ th, addToast }) {
             </div>
             <div style={{ height: 6, background: `${th.t3}30`, borderRadius: 99, position: 'relative', overflow: 'visible' }}>
               <div style={{
-                position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
+                position: 'absolute', left: 0, top: 0, height: '100%', width: '100%', borderRadius: 99,
                 background: `linear-gradient(90deg, #0EA5E9, #10B981, #FBBF24)`,
-                width: `${Math.min(100, Math.max(0, ((currentP - 990) / (1030 - 990)) * 100))}%`,
-                transition: 'width 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                transformOrigin: 'left',
+                transform: `scaleX(${Math.max(0, Math.min(100, ((currentP - 990) / (1030 - 990)) * 100)) / 100})`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
               }} />
               <div style={{
-                position: 'absolute',
-                left: `${Math.min(100, Math.max(0, ((currentP - 990) / (1030 - 990)) * 100))}%`,
-                top: '50%', transform: 'translate(-50%,-50%)',
-                width: 12, height: 12, borderRadius: '50%',
-                background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`,
-                transition: 'left 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
-              }} />
+                position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
+                transform: `translateX(${Math.max(0, Math.min(100, ((currentP - 990) / (1030 - 990)) * 100))}%)`,
+                transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
+                willChange: 'transform'
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: '50%', transform: 'translate(-50%,-50%)',
+                  width: 12, height: 12, borderRadius: '50%',
+                  background: th.id === 'day' ? '#fff' : th.t1, boxShadow: `0 0 10px rgba(0,0,0,0.5)`
+                }} />
+              </div>
             </div>
           </div>
         </Card>
@@ -2289,6 +2364,15 @@ const genLightData = () => {
 
 const BRIGHTNESS_DATASETS = genLightData();
 
+/* ─── GLOBÁLIS UV INDEX LOGIKA (WHO Standard) ─── */
+const getUvInfo = (val) => {
+  if (val < 3) return { color: '#10B981', label: 'Alacsony', time: 'Nincs korlát', advice: 'Biztonságos kint tartózkodni.' };
+  if (val < 6) return { color: '#FBBF24', label: 'Mérsékelt', time: '~45 perc', advice: 'Déli órákban árnyék keresése javasolt.' };
+  if (val < 8) return { color: '#F97316', label: 'Magas', time: '~30 perc', advice: 'Fényvédelem (kalap, naptej) kötelező!' };
+  if (val < 11) return { color: '#EF4444', label: 'Nagyon Magas', time: '~15 perc', advice: 'Kerüld a napot 11:00 és 15:00 között!' };
+  return { color: '#8B5CF6', label: 'Extrém', time: '< 10 perc', advice: 'Maradj beltérben! Azonnali leégésveszély.' };
+};
+
 /* ═══════════════ BRIGHTNESS & UV PAGE (GÖRGETŐS NÉZET + DINAMIKUS ÉGI ÍV) ═══════════════ */
 function BrightnessPage({ th, addToast }) {
   const [show, setShow] = useState(false);
@@ -2302,7 +2386,8 @@ function BrightnessPage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = BRIGHTNESS_DATASETS[range];
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, BRIGHTNESS_DATASETS);
+  const data = chartData;
   const luxs = data.map(d => d.lux);
   const uvs = data.map(d => d.uv);
   
@@ -2318,14 +2403,7 @@ function BrightnessPage({ th, addToast }) {
     { id: '1mo', label: '1 Hónap' },
   ];
 
-  /* ─── UV INDEX ÉS BŐRTÍPUS LOGIKA ─── */
-  const getUvInfo = (val) => {
-    if (val < 3) return { color: '#10B981', label: 'Alacsony', time: 'Nincs korlát', advice: 'Biztonságos kint tartózkodni.' };
-    if (val < 6) return { color: '#FBBF24', label: 'Mérsékelt', time: '~45 perc', advice: 'Déli órákban árnyék keresése javasolt.' };
-    if (val < 8) return { color: '#F97316', label: 'Magas', time: '~30 perc', advice: 'Fényvédelem (kalap, naptej) kötelező!' };
-    if (val < 11) return { color: '#EF4444', label: 'Nagyon Magas', time: '~15 perc', advice: 'Kerüld a napot 11:00 és 15:00 között!' };
-    return { color: '#8B5CF6', label: 'Extrém', time: '< 10 perc', advice: 'Maradj beltérben! Azonnali leégésveszély.' };
-  };
+  //* ─── UV INDEX ÉS BŐRTÍPUS LOGIKA ─── */
   const cUV = getUvInfo(currentUV);
 
   const calcBurnTime = (uvi, factor) => {
@@ -2344,34 +2422,24 @@ function BrightnessPage({ th, addToast }) {
     { icon: '⛱️', label: 'Árnyék', active: currentUV >= 8 }
   ];
 
-  /* ─── FÉNYERŐ, ÉGBOLT ÉS NAPELEM LOGIKA ─── */
+  /* ─── FÉNYERŐ, ÉGBOLT ÉS FELHŐZET LOGIKA ─── */
   const now = new Date();
   const currentHourDecimal = now.getHours() + now.getMinutes() / 60;
   
   const expectedMaxLux = Math.max(0, Math.sin(((currentHourDecimal - 5) / 14) * Math.PI) * 100000); 
   
-  let skyCondition, skyIcon;
+  let skyCondition, skyIcon, cloudCoverPct;
   if (expectedMaxLux < 1000) {
     skyCondition = 'Éjszaka / Sötét'; skyIcon = '🌙';
+    cloudCoverPct = 15; // Éjszakai becslés
   } else {
+    // Kiszámoljuk a felhőzetet: a jelenlegi fényerő és az elvárt max fényerő arányából
     const cloudRatio = currentLux / expectedMaxLux;
-    if (cloudRatio > 0.8) { skyCondition = 'Derült, napos'; skyIcon = '☀️'; }
-    else if (cloudRatio > 0.4) { skyCondition = 'Változóan felhős'; skyIcon = '⛅'; }
+    cloudCoverPct = Math.max(0, Math.min(100, Math.round((1 - cloudRatio) * 100)));
+    
+    if (cloudCoverPct < 20) { skyCondition = 'Derült, napos'; skyIcon = '☀️'; }
+    else if (cloudCoverPct < 60) { skyCondition = 'Változóan felhős'; skyIcon = '⛅'; }
     else { skyCondition = 'Erősen borult'; skyIcon = '☁️'; }
-  }
-
-  const solarCapacityW = 2.5;
-  const currentPowerW = (currentLux / 100000) * solarCapacityW;
-  
-  let sunshineHours = 0;
-  let totalYieldWh = 0;
-  if (range === '1d') {
-    data.forEach((d, i) => {
-      if (i <= now.getHours()) {
-        if (d.lux > 15000) sunshineHours += 1;
-        totalYieldWh += (d.lux / 100000) * solarCapacityW;
-      }
-    });
   }
 
   /* ─── 🌟 DINAMIKUS ÉJSZAKAI / NAPPALI ÍV MATEMATIKA ─── */
@@ -2407,7 +2475,25 @@ function BrightnessPage({ th, addToast }) {
     bodyColor = '#BAE6FD'; glowColor = '#38BDF8';
   }
 
-  // Biztonsági korlátok
+  // Időtartamok kiszámolása (Naphossz és Hátralévő idő)
+  const daylightHoursLength = Math.floor(sunsetTime - sunriseTime);
+  const daylightMinsLength = Math.round(((sunsetTime - sunriseTime) % 1) * 60);
+
+  let timeLabel, timeHours, timeMins;
+  if (isDay) {
+    const rem = sunsetTime - currentHourDecimal;
+    timeLabel = "Hátralévő nappal";
+    timeHours = Math.floor(rem);
+    timeMins = Math.round((rem % 1) * 60);
+  } else {
+    // Éjszaka kiszámoljuk mennyi idő van még a holnapi napkeltéig
+    const rem = currentHourDecimal >= sunsetTime ? (24 - currentHourDecimal) + sunriseTime : sunriseTime - currentHourDecimal;
+    timeLabel = "Következő napkelte";
+    timeHours = Math.floor(rem);
+    timeMins = Math.round((rem % 1) * 60);
+  }
+
+  // Biztonsági korlátok az SVG-hez
   progress = Math.max(0, Math.min(1, progress));
   
   // Szög és koordináták kiszámítása az SVG félkörívhez (Ellipszis)
@@ -2421,21 +2507,21 @@ function BrightnessPage({ th, addToast }) {
     const rows = ['Időpont,Fényerő (Lux),UV Index', ...data.map(d => `${d.t},${d.lux},${d.uv}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
       xml += `    <record>\n      <time>${d.t}</time>\n      <lux>${d.lux}</lux>\n      <uv>${d.uv}</uv>\n    </record>\n`;
@@ -2443,7 +2529,7 @@ function BrightnessPage({ th, addToast }) {
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `feny_uv_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -2492,135 +2578,11 @@ function BrightnessPage({ th, addToast }) {
   });
 
   return (
-    <SensorLayout title="Fényerő & UV Sugárzás" icon="☀" color={th.w} th={th} show={show}>
+    <SensorLayout title="UV Sugárzás & Fényerő" icon="☀" color={cUV.color} th={th} show={show}>
 
-      {/* ════════════ 1. SOR: FÉNYERŐ (LUX) ÉS NAPELEM ════════════ */}
+      {/* ════════════ 1. SOR: UV INDEX ÉS BŐRTÍPUS (Most már ez a Hero szekció!) ════════════ */}
       <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column' }}>
         <Card show={show} delay={80} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <div>
-              <Lbl t={th}>Látható Fény Idősora</Lbl>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.w, letterSpacing: '-0.03em', lineHeight: 1 }}>{currentLux.toLocaleString('hu-HU')}</span>
-                <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>Lux</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {rangeButtons.map(({ id, label }) => (
-                <button key={id} style={btnStyle(id, th.w)} onClick={() => setRange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="gLuxFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={th.w} stopOpacity={0.3} />
-                    <stop offset="80%" stopColor={th.w} stopOpacity={0.05} />
-                    <stop offset="100%" stopColor={th.w} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
-                <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
-                <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(maxLux * 1.1) || 1000]} tickFormatter={v => v >= 1000 ? `${v/1000}k` : v} />
-                <Tooltip content={<LuxTip />} cursor={{ stroke: `${th.w}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
-                <Area type="monotone" dataKey="lux" stroke={th.w} strokeWidth={2.5} fill="url(#gLuxFill)" dot={false} animationDuration={600} animationEasing="ease-in-out" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
-
-      <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
-        <Card show={show} delay={140} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Lbl t={th}>{isDay ? 'Égbolt Állapot & Napelem' : 'Éjszakai Pihenőmód'}</Lbl>
-              <span style={{ fontSize: 24, lineHeight: 1 }}>{skyIcon}</span>
-            </div>
-            
-            {/* ─── PRÉMIUM SVG MŰSZER: NAPPALI ÉS ÉJSZAKAI ÍV ─── */}
-            <div style={{ position: 'relative', marginTop: 24, display: 'flex', justifyContent: 'center', height: 140 }}>
-              <svg width="100%" height="150" viewBox="0 0 300 150" style={{ overflow: 'visible' }}>
-                <defs>
-                  {/* Fénylő Gradient az útvonalnak */}
-                  <linearGradient id="dayPath" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#F97316" />
-                    <stop offset="50%" stopColor="#FDE047" />
-                    <stop offset="100%" stopColor="#F97316" />
-                  </linearGradient>
-                  <linearGradient id="nightPath" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#38BDF8" />
-                    <stop offset="50%" stopColor="#BAE6FD" />
-                    <stop offset="100%" stopColor="#38BDF8" />
-                  </linearGradient>
-                </defs>
-
-                {/* Horizont vonal */}
-                <line x1="20" y1="110" x2="280" y2="110" stroke={`${th.t2}30`} strokeWidth="1.5" strokeDasharray="3 4" />
-                
-                {/* Teljes háttér ív */}
-                <path d="M 50 110 A 100 80 0 0 1 250 110" fill="none" stroke={`${th.t2}15`} strokeWidth="4" strokeLinecap="round" />
-                
-                {/* Aktív bejárt ív */}
-                {progress > 0 && (
-                  <path d={`M 50 110 A 100 80 0 0 1 ${pathX} ${pathY}`} fill="none" 
-                        stroke={isDay ? "url(#dayPath)" : "url(#nightPath)"} 
-                        strokeWidth="4" strokeLinecap="round" 
-                        style={{ filter: `drop-shadow(0 0 6px ${isDay ? '#F59E0B80' : '#38BDF880'})` }} />
-                )}
-                
-                {/* ☀️ / 🌙 Égitest a pályán fénylő aurával */}
-                <g style={{ transition: 'all 0.5s ease' }}>
-                  <circle cx={pathX} cy={pathY} r={24} fill={glowColor} opacity="0.1" />
-                  <circle cx={pathX} cy={pathY} r={14} fill={glowColor} opacity="0.3" />
-                  <circle cx={pathX} cy={pathY} r={6} fill={bodyColor} />
-                  
-                  {/* Holdsarló "kivágás" effekt éjszaka */}
-                  {!isDay && <circle cx={pathX + 2.5} cy={pathY - 2.5} r={5} fill={th.card} />}
-                </g>
-
-                {/* Dinamikus Feliratok */}
-                <text x="50" y="132" textAnchor="middle" fill={th.t1} fontSize="12" fontWeight="600" fontFamily="'JetBrains Mono', monospace">{leftLabel}</text>
-                <text x="50" y="146" textAnchor="middle" fill={th.t3} fontSize="9" textTransform="uppercase" letterSpacing="0.05em">{leftSub}</text>
-                
-                <text x="250" y="132" textAnchor="middle" fill={th.t1} fontSize="12" fontWeight="600" fontFamily="'JetBrains Mono', monospace">{rightLabel}</text>
-                <text x="250" y="146" textAnchor="middle" fill={th.t3} fontSize="9" textTransform="uppercase" letterSpacing="0.05em">{rightSub}</text>
-              </svg>
-            </div>
-          </div>
-          
-          {/* ─── Alsó Fix Napelem Adatok ─── */}
-          <div style={{ marginTop: 10, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Pillanatnyi (2.5W)</div>
-                <div style={{ ...tech, fontSize: 16, fontWeight: 600, color: th.w }}>{currentPowerW.toFixed(2)} W</div>
-              </div>
-              {range === '1d' ? (
-                <div>
-                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Hozam (Eddig)</div>
-                  <div style={{ ...tech, fontSize: 16, fontWeight: 600, color: '#10B981' }}>{totalYieldWh.toFixed(1)} Wh</div>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Töltési Státusz</div>
-                  <div style={{ ...tech, fontSize: 16, fontWeight: 600, color: th.w }}>{Math.min(100, Math.round((currentLux / 50000) * 100))}%</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
-      </div>
-
-
-      {/* ════════════ 2. SOR: UV INDEX SZEKCIÓ (WHO Színezéssel) ════════════ */}
-      <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', marginTop: 20 }}>
-        <Card show={show} delay={200} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <div>
               <Lbl t={th}>UV Sugárzás Idősora</Lbl>
@@ -2638,28 +2600,30 @@ function BrightnessPage({ th, addToast }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <BarChart key={displayRange} data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
                 <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.max(11, Math.ceil(maxUV))]} />
                 <Tooltip content={<UVTip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                <ReferenceLine y={8} stroke="#EF4444" strokeDasharray="4 4" label={{ value: 'Magas kockázat', fill: '#EF4444', fontSize: 10, position: 'insideTopRight', dy: -6 }} />
-                <Bar dataKey="uv" radius={[4, 4, 0, 0]} maxBarSize={40} animationDuration={600} animationEasing="ease-in-out">
+                <Bar dataKey="uv" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={true} animationDuration={800} animationEasing="ease-out">
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={getUvInfo(entry.uv).color} />
                   ))}
                 </Bar>
+                <ReferenceLine y={8} stroke="#EF4444" strokeDasharray="4 4"
+                  label={(p) => <RefLineChip viewBox={p.viewBox} text="Magas kockázat" color="#EF4444" th={th} dy={-16} />} />
               </BarChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
         </Card>
       </div>
 
-      <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', marginTop: 20 }}>
-        <Card show={show} delay={260} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
+      <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
+        <Card show={show} delay={140} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div style={{ ...cardFadeStyle, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Lbl t={th}>Napvédelem & Bőrtípus</Lbl>
               <span style={{ padding: '2px 8px', borderRadius: 6, background: `${cUV.color}15`, color: cUV.color, ...ui, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
@@ -2683,13 +2647,13 @@ function BrightnessPage({ th, addToast }) {
               ))}
             </div>
 
-            <p style={{ ...ui, fontSize: 13, color: th.t1, marginTop: 20, marginBottom: 0, lineHeight: 1.55, fontWeight: 500 }}>
+            <p style={{ ...ui, fontSize: 13, color: th.t1, marginTop: 'auto', marginBottom: 0, lineHeight: 1.55, fontWeight: 500 }}>
               {cUV.advice}
             </p>
           </div>
 
           {/* Bőrtípus szerinti Színátmenetes Vonal */}
-          <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 12 }}>
               Becsült leégési idő bőrtípus szerint
             </div>
@@ -2715,18 +2679,137 @@ function BrightnessPage({ th, addToast }) {
         </Card>
       </div>
 
+
+      {/* ════════════ 2. SOR: FÉNYERŐ (LUX) ÉS ÉGBOLT ÍV (Lekerült a 2. sorba) ════════════ */}
+      <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', marginTop: 20 }}>
+        <Card show={show} delay={200} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div>
+              <Lbl t={th}>Látható Fény Idősora</Lbl>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.w, letterSpacing: '-0.03em', lineHeight: 1 }}>{currentLux.toLocaleString('hu-HU')}</span>
+                <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>Lux</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {rangeButtons.map(({ id, label }) => (
+                <button key={id} style={btnStyle(id, th.w)} onClick={() => setRange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart key={displayRange} data={data} margin={{ top: 8, right: 28, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="gLuxFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={th.w} stopOpacity={0.3} />
+                    <stop offset="80%" stopColor={th.w} stopOpacity={0.05} />
+                    <stop offset="100%" stopColor={th.w} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
+                <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
+                <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(maxLux * 1.1) || 1000]} tickFormatter={v => v >= 1000 ? `${v/1000}k` : v} />
+                <Tooltip content={<LuxTip />} cursor={{ stroke: `${th.w}40`, strokeWidth: 1.5, strokeDasharray: '4 3' }} />
+                <Area type="monotone" dataKey="lux" stroke={th.w} strokeWidth={2.5} fill="url(#gLuxFill)" dot={false} animationDuration={600} animationEasing="ease-in-out" />
+              </AreaChart>
+            </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
+          </div>
+        </Card>
+      </div>
+
+      <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', marginTop: 20 }}>
+        <Card show={show} delay={260} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div style={{ ...cardFadeStyle, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            
+            <Lbl t={th}>{isDay ? 'Égbolt Állapot & Felhőzet' : 'Éjszakai Állapot'}</Lbl>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
+              <div style={{ fontSize: 52, lineHeight: 1, filter: `drop-shadow(0 4px 12px ${isDay ? '#F59E0B40' : '#38BDF840'})` }}>
+                {skyIcon}
+              </div>
+              <div>
+                <div style={{ ...ui, fontSize: 20, color: th.t1, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                  {skyCondition}
+                </div>
+                <div style={{ ...ui, fontSize: 13, color: th.t2, marginTop: 4, fontWeight: 500 }}>
+                  Felhőborítottság: <span style={{ color: th.t1, fontWeight: 700 }}>{cloudCoverPct}%</span>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: 160, margin: '12px 0' }}>
+              <svg width="100%" height="100%" viewBox="0 0 300 150" style={{ overflow: 'visible', maxHeight: 150 }}>
+                <defs>
+                  <linearGradient id="dayPath" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#F97316" />
+                    <stop offset="50%" stopColor="#FDE047" />
+                    <stop offset="100%" stopColor="#F97316" />
+                  </linearGradient>
+                  <linearGradient id="nightPath" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#38BDF8" />
+                    <stop offset="50%" stopColor="#BAE6FD" />
+                    <stop offset="100%" stopColor="#38BDF8" />
+                  </linearGradient>
+                </defs>
+                <line x1="20" y1="110" x2="280" y2="110" stroke={`${th.t2}30`} strokeWidth="1.5" strokeDasharray="3 4" />
+                <path d="M 50 110 A 100 80 0 0 1 250 110" fill="none" stroke={`${th.t2}15`} strokeWidth="4" strokeLinecap="round" />
+                {progress > 0 && (
+                  <path d={`M 50 110 A 100 80 0 0 1 ${pathX} ${pathY}`} fill="none" 
+                        stroke={isDay ? "url(#dayPath)" : "url(#nightPath)"} 
+                        strokeWidth="4" strokeLinecap="round" 
+                        style={{ filter: `drop-shadow(0 0 6px ${isDay ? '#F59E0B80' : '#38BDF880'})` }} />
+                )}
+                <g style={{ transition: 'all 0.5s ease' }}>
+                  <circle cx={pathX} cy={pathY} r={24} fill={glowColor} opacity="0.1" />
+                  <circle cx={pathX} cy={pathY} r={14} fill={glowColor} opacity="0.3" />
+                  <circle cx={pathX} cy={pathY} r={6} fill={bodyColor} />
+                  {!isDay && <circle cx={pathX + 2.5} cy={pathY - 2.5} r={5} fill={th.card} />}
+                </g>
+                <text x="50" y="132" textAnchor="middle" fill={th.t1} fontSize="12" fontWeight="600" fontFamily="'JetBrains Mono', monospace">{leftLabel}</text>
+                <text x="50" y="146" textAnchor="middle" fill={th.t3} fontSize="9" textTransform="uppercase" letterSpacing="0.05em">{leftSub}</text>
+                <text x="250" y="132" textAnchor="middle" fill={th.t1} fontSize="12" fontWeight="600" fontFamily="'JetBrains Mono', monospace">{rightLabel}</text>
+                <text x="250" y="146" textAnchor="middle" fill={th.t3} fontSize="9" textTransform="uppercase" letterSpacing="0.05em">{rightSub}</text>
+              </svg>
+            </div>
+          
+            <div style={{ paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Naphossz ma</div>
+                  <div style={{ ...tech, fontSize: 16, fontWeight: 600, color: th.t1 }}>
+                    {daylightHoursLength}ó {daylightMinsLength}p
+                  </div>
+                </div>
+                <div>
+                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>{timeLabel}</div>
+                  <div style={{ ...tech, fontSize: 16, fontWeight: 600, color: isDay ? th.w : '#38BDF8' }}>
+                    {timeHours}ó {timeMins}p
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+        </Card>
+      </div>
+
       {/* ════════════ 3. SOR: KÖZÖS EXPORT KÁRTYA ════════════ */}
       <div className="gc8" style={{ gridColumn: 'span 8', marginTop: 20 }}>
         <Card show={show} delay={320} t={th}>
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Lux és UVI) letöltése.
+              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> adatcsomag (Lux és UVI) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.t1, color: th.card, border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: th.t1, color: th.card, border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
             </div>
           </div>
@@ -2796,7 +2879,8 @@ function PrecipitationPage({ th, addToast }) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = RAIN_DATASETS[range];
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, RAIN_DATASETS);
+  const data = chartData;
   const intensities = data.map(d => d.intensity);
   const accumulations = data.map(d => d.acc);
   
@@ -2819,10 +2903,10 @@ function PrecipitationPage({ th, addToast }) {
     if (intensities[i] > 0) {
       const diff = (intensities.length - 1) - i;
       if (diff === 0) daysSinceRain = "Jelenleg is esik";
-      else daysSinceRain = `${diff} ${range === '1w' ? 'napja' : range === '1d' ? 'órája' : 'időegysége'}`;
+      else daysSinceRain = `${diff} ${displayRange === '1w' ? 'napja' : displayRange === '1d' ? 'órája' : 'időegysége'}`;
       break;
     }
-    if (i === 0) daysSinceRain = `Több mint 1 ${range === '1w' ? 'hete' : 'hónapja'}`;
+    if (i === 0) daysSinceRain = `Több mint 1 ${displayRange === '1w' ? 'hete' : 'hónapja'}`;
   }
 
   /* ─── VÍZGAZDÁLKODÁS ÉS ÖNTÖZÉS LOGIKA ─── */
@@ -2831,6 +2915,14 @@ function PrecipitationPage({ th, addToast }) {
   else if (totalAcc < 5) irrigationAdvice = 'Száraz talaj. Öntözés javasolt.';
   else if (totalAcc < 20) irrigationAdvice = 'Optimális talajnedvesség.';
   else irrigationAdvice = 'Telített talaj. Öntözés nem szükséges.';
+
+  /* ─── TENDENCIA LOGIKA ─── */
+  const prevInt = intensities[intensities.length - 2] || 0;
+  let rainTrendLabel = 'Stagnál';
+  let rainTrendColor = th.t1;
+  if (currentInt > prevInt) { rainTrendLabel = 'Erősödő ↗'; rainTrendColor = '#8B5CF6'; }
+  else if (currentInt < prevInt) { rainTrendLabel = 'Gyengülő ↘'; rainTrendColor = '#0EA5E9'; }
+  else if (currentInt === 0) { rainTrendLabel = 'Csapadékmentes'; rainTrendColor = th.t2; }
 
   const rangeButtons = [
     { id: '1h', label: '1 Óra' },
@@ -2844,21 +2936,21 @@ function PrecipitationPage({ th, addToast }) {
     const rows = ['Időpont,Intenzitás (mm/h),Összeg (mm)', ...data.map(d => `${d.t},${d.intensity},${d.acc}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, records: data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
       xml += `    <record>\n      <time>${d.t}</time>\n      <intensity>${d.intensity}</intensity>\n      <accumulation>${d.acc}</accumulation>\n    </record>\n`;
@@ -2866,7 +2958,7 @@ function PrecipitationPage({ th, addToast }) {
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `csapadek_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -2936,9 +3028,9 @@ function PrecipitationPage({ th, addToast }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <AreaChart key={displayRange} data={data} margin={{ top: 8, right: 28, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="gIntFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.4} />
@@ -2953,6 +3045,7 @@ function PrecipitationPage({ th, addToast }) {
                 <Area type="monotone" dataKey="intensity" stroke="#0EA5E9" strokeWidth={2.5} fill="url(#gIntFill)" dot={false} animationDuration={600} animationEasing="ease-in-out" />
               </AreaChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
         </Card>
       </div>
@@ -2960,15 +3053,15 @@ function PrecipitationPage({ th, addToast }) {
       <div className="gc4" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
         <Card show={show} delay={140} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', ...cardFadeStyle }}>
               <Lbl t={th}>Aktuális Állapot & Statisztika</Lbl>
               <span style={{ fontSize: 24, lineHeight: 1 }}>{rainIcon}</span>
             </div>
-            <div style={{ ...ui, fontSize: 20, color: rainColor, fontWeight: 700, marginTop: 4, letterSpacing: '-0.02em' }}>
+            <div style={{ ...ui, fontSize: 20, color: rainColor, fontWeight: 700, marginTop: 4, letterSpacing: '-0.02em', ...cardFadeStyle }}>
               {rainStatus}
             </div>
             
-            <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 16, ...cardFadeStyle }}>
               <div>
                 <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Időszakos Max. Intenzitás</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -2983,10 +3076,10 @@ function PrecipitationPage({ th, addToast }) {
             </div>
           </div>
           
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ ...ui, fontSize: 12, color: th.t2 }}>Hardver: Billenőkanál felbontás</span>
-              <span style={{ ...tech, fontSize: 12, fontWeight: 600, color: th.t1 }}>0.3 mm / billenés</span>
+              <span style={{ ...ui, fontSize: 12, color: th.t2 }}>Csapadék tendenciája</span>
+              <span style={{ ...ui, fontSize: 12, fontWeight: 700, color: rainTrendColor }}>{rainTrendLabel}</span>
             </div>
           </div>
         </Card>
@@ -2999,7 +3092,7 @@ function PrecipitationPage({ th, addToast }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <div>
               <Lbl t={th}>Csapadékösszeg (Accumulation)</Lbl>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, ...cardFadeStyle }}>
                 <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: '#3B82F6', letterSpacing: '-0.03em', lineHeight: 1 }}>{totalAcc.toFixed(1)}</span>
                 <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>mm összesen</span>
               </div>
@@ -3013,9 +3106,9 @@ function PrecipitationPage({ th, addToast }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <BarChart key={displayRange} data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="gAccFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#3B82F6" stopOpacity={1} />
@@ -3026,9 +3119,10 @@ function PrecipitationPage({ th, addToast }) {
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.max(2, Math.ceil(maxAcc))]} />
                 <Tooltip content={<AccTip />} cursor={{ fill: 'rgba(59,130,246,0.05)' }} />
-                <Bar dataKey="acc" fill="url(#gAccFill)" radius={[4, 4, 0, 0]} maxBarSize={40} animationDuration={600} animationEasing="ease-in-out" />
+                <Bar dataKey="acc" fill="url(#gAccFill)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
         </Card>
       </div>
@@ -3040,7 +3134,7 @@ function PrecipitationPage({ th, addToast }) {
               <Lbl t={th}>Vízgazdálkodás & Öntözés</Lbl>
             </div>
             
-            <div style={{ display: 'flex', gap: 20, marginTop: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 20, marginTop: 12, alignItems: 'center', ...cardFadeStyle }}>
               {/* Vizuális Csapadékmérő Henger */}
               <div style={{ width: 40, height: 120, borderRadius: 20, background: th.id === 'day' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.05)', border: `2px solid ${th.border}`, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
                 {/* Mérővonalak */}
@@ -3074,7 +3168,7 @@ function PrecipitationPage({ th, addToast }) {
               </div>
             </div>
 
-            <div style={{ marginTop: 24, padding: 14, background: th.id === 'day' ? 'rgba(15,23,42,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${th.border}` }}>
+            <div style={{ marginTop: 24, padding: 14, background: th.id === 'day' ? 'rgba(15,23,42,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${th.border}`, ...cardFadeStyle }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 14 }}>{totalAcc < 5 ? '💧' : '🌱'}</span>
                 <span style={{ ...ui, fontSize: 12, fontWeight: 600, color: th.t1, textTransform: 'uppercase' }}>Talajállapot</span>
@@ -3093,12 +3187,12 @@ function PrecipitationPage({ th, addToast }) {
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Intenzitás és Összeg) letöltése.
+              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> adatcsomag (Intenzitás és Összeg) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
             </div>
           </div>
@@ -3185,18 +3279,24 @@ function WindPage({ th, addToast}) {
     return () => clearTimeout(t);
   }, []);
 
-  const data = WIND_DATASETS[range];
+  const { displayRange, isFetching, fadeStyle, cardFadeStyle, chartData } = useChartCrossfade(range, WIND_DATASETS);
+  const data = chartData;
   const speeds = data.map(d => d.speed);
-  const gusts = data.map(d => d.gust);
 
   const currentSpeed = R.windSpeed;
-  const currentGust = parseFloat((currentSpeed * 1.4).toFixed(1));
   const maxSpeed = Math.max(...speeds);
-  const maxGust = Math.max(...gusts);
   const avgSpeed = parseFloat((speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1));
 
   const bf = getBeaufort(currentSpeed);
   const dominantRose = ROSE_DATA.reduce((a, b) => (b.pct > a.pct ? b : a), ROSE_DATA[0]);
+  const windLabel = getWindLabel(R.windDir);
+
+  /* ─── TENDENCIA LOGIKA ─── */
+  const prevSpeed = speeds[speeds.length - 2] || 0;
+  let windTrendLabel = 'Stabil';
+  let windTrendColor = th.t2;
+  if (currentSpeed > prevSpeed + 1) { windTrendLabel = 'Erősödő ↗'; windTrendColor = th.w; }
+  else if (currentSpeed < prevSpeed - 1) { windTrendLabel = 'Mérséklődő ↘'; windTrendColor = '#10B981'; }
 
   const rangeButtons = [
     { id: '1h', label: '1 Óra' },
@@ -3205,34 +3305,34 @@ function WindPage({ th, addToast}) {
     { id: '1mo', label: '1 Hónap' },
   ];
 
-  /* Fájlgenerátor funkciók */
+  /* Fájlgenerátor funkciók (Lökések eltávolítva) */
   const downloadCSV = () => {
-    const rows = ['Időpont,Szélsebesség (km/h),Lökés (km/h)', ...data.map(d => `${d.t},${d.speed},${d.gust}`)].join('\n');
+    const rows = ['Időpont,Szélsebesség (km/h)', ...data.map(d => `${d.t},${d.speed}`)].join('\n');
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${displayRange}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range, windDirectionDeg: R.windDir, windDirectionLabel: windLabel, records: data };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, windDirectionDeg: R.windDir, windDirectionLabel: windLabel, records: data.map(d => ({ t: d.t, speed: d.speed })) };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${displayRange}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${range}</range>\n    <windDirectionDeg>${R.windDir}</windDirectionDeg>\n    <windDirectionLabel>${windLabel}</windDirectionLabel>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <windDirectionDeg>${R.windDir}</windDirectionDeg>\n    <windDirectionLabel>${windLabel}</windDirectionLabel>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
-      xml += `    <record>\n      <time>${d.t}</time>\n      <speed>${d.speed}</speed>\n      <gust>${d.gust}</gust>\n    </record>\n`;
+      xml += `    <record>\n      <time>${d.t}</time>\n      <speed>${d.speed}</speed>\n    </record>\n`;
     });
     xml += `  </records>\n</telemetry>`;
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${range}.xml`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${displayRange}.xml`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -3248,15 +3348,9 @@ function WindPage({ th, addToast}) {
     return (
       <div style={{ background: th.card, border: `1px solid ${th.border}`, borderRadius: 16, padding: '10px 16px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', backdropFilter: 'blur(20px)' }}>
         <div style={{ ...ui, fontSize: 11, color: th.lbl, fontWeight: 600, marginBottom: 6 }}>{label}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-            <span style={{ ...tech, fontSize: 18, fontWeight: 700, color: th.a }}>{payload[0]?.value?.toFixed(1)}</span>
-            <span style={{ ...ui, fontSize: 12, color: th.t2 }}>km/h szél</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-            <span style={{ ...tech, fontSize: 14, fontWeight: 600, color: th.w }}>{payload[1]?.value?.toFixed(1)}</span>
-            <span style={{ ...ui, fontSize: 11, color: th.t2 }}>km/h lökés</span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={{ ...tech, fontSize: 18, fontWeight: 700, color: th.a }}>{payload[0]?.value?.toFixed(1)}</span>
+          <span style={{ ...ui, fontSize: 12, color: th.t2 }}>km/h</span>
         </div>
       </div>
     );
@@ -3291,13 +3385,12 @@ function WindPage({ th, addToast}) {
         <Card show={show} delay={80} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 380 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <Lbl t={th}>Szélsebesség & Lökések</Lbl>
+              <Lbl t={th}>Szélsebesség</Lbl>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.a, letterSpacing: '-0.03em', lineHeight: 1 }}>
                   {currentSpeed.toFixed(1)}
                 </span>
                 <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>km/h</span>
-                <span style={{ ...ui, fontSize: 12, color: th.t2, marginLeft: 6 }}>· lökés {currentGust.toFixed(1)} km/h</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -3309,9 +3402,9 @@ function WindPage({ th, addToast}) {
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', minHeight: 280 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 280, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <AreaChart key={displayRange} data={chartData} margin={{ top: 8, right: 28, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="gWindFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={th.a} stopOpacity={0.45} />
@@ -3320,12 +3413,12 @@ function WindPage({ th, addToast}) {
                 </defs>
                 <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
                 <XAxis dataKey="t" tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} minTickGap={20} />
-                <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.max(5, Math.ceil(maxGust))]} />
+                <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} domain={[0, Math.max(5, Math.ceil(maxSpeed))]} />
                 <Tooltip content={<SpeedTip />} cursor={{ stroke: th.a, strokeWidth: 1, strokeDasharray: '4 4' }} />
                 <Area type="monotone" dataKey="speed" stroke={th.a} strokeWidth={2.5} fill="url(#gWindFill)" animationDuration={700} animationEasing="ease-in-out" />
-                <Area type="monotone" dataKey="gust" stroke={th.w} strokeWidth={1.5} strokeDasharray="3 4" fill="transparent" animationDuration={700} animationEasing="ease-in-out" />
               </AreaChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
         </Card>
       </div>
@@ -3341,7 +3434,7 @@ function WindPage({ th, addToast}) {
               <span style={{ ...ui, fontSize: 15, color: th.t2, fontWeight: 500 }}>{windLabel}</span>
             </div>
           </div>
-          <div style={{ marginTop: 8, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ marginTop: 8, paddingTop: 14, borderTop: `1px solid ${th.border}`, display: 'flex', justifyContent: 'space-between', ...cardFadeStyle }}>
             <span style={{ ...ui, fontSize: 12, color: th.t2 }}>Domináns irány (időszak)</span>
             <span style={{ ...tech, fontSize: 12, fontWeight: 600, color: th.t1 }}>{dominantRose.dir} ({dominantRose.pct}%)</span>
           </div>
@@ -3352,7 +3445,7 @@ function WindPage({ th, addToast}) {
       <div className="gc8" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', marginTop: 20 }}>
         <Card show={show} delay={220} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 320 }}>
           <Lbl t={th}>Szélirány-eloszlás (Szélrózsa)</Lbl>
-          <div style={{ flex: 1, width: '100%', minHeight: 240, marginTop: 8 }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 240, marginTop: 8, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ROSE_DATA} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
                 <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
@@ -3366,6 +3459,7 @@ function WindPage({ th, addToast}) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            <ChartGhostShimmer th={th} isFetching={isFetching} />
           </div>
         </Card>
       </div>
@@ -3378,15 +3472,14 @@ function WindPage({ th, addToast}) {
               <Lbl t={th}>Általános Statisztika</Lbl>
               <span style={{ fontSize: 22, lineHeight: 1 }}>💨</span>
             </div>
-            <div style={{ ...ui, fontSize: 18, color: th.a, fontWeight: 700, marginTop: 2, letterSpacing: '-0.02em' }}>
+            <div style={{ ...ui, fontSize: 18, color: th.a, fontWeight: 700, marginTop: 2, letterSpacing: '-0.02em', ...cardFadeStyle }}>
               Beaufort {bf.scale} · {bf.label}
             </div>
 
-            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 14, ...cardFadeStyle }}>
               {[
                 ['Időszaki Átlagsebesség', `${avgSpeed.toFixed(1)} km/h`, th.t1],
                 ['Időszaki Max. Sebesség', `${maxSpeed.toFixed(1)} km/h`, th.a],
-                ['Időszaki Max. Lökés', `${maxGust.toFixed(1)} km/h`, th.w],
               ].map(([l, v, c]) => (
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 13 }}>
                   <span style={{ color: th.t2 }}>{l}</span>
@@ -3396,10 +3489,10 @@ function WindPage({ th, addToast}) {
             </div>
           </div>
 
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ ...ui, fontSize: 12, color: th.t2 }}>Hardver: Cup anemometer + szélkakas</span>
-              <span style={{ ...tech, fontSize: 12, fontWeight: 600, color: th.t1 }}>0.5 m/s felbontás</span>
+              <span style={{ ...ui, fontSize: 12, color: th.t2 }}>Légmozgás tendenciája</span>
+              <span style={{ ...ui, fontSize: 12, fontWeight: 700, color: windTrendColor }}>{windTrendLabel}</span>
             </div>
           </div>
         </Card>
@@ -3411,12 +3504,12 @@ function WindPage({ th, addToast}) {
           <Lbl t={th}>Adat Exportálás</Lbl>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
             <p style={{ ...ui, fontSize: 13, color: th.t2, margin: 0, flex: '1 1 200px', lineHeight: 1.5 }}>
-              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === range)?.label}</strong> adatcsomag (Szélsebesség, Lökés, Irány) letöltése.
+              A kombinált <strong style={{ color: th.t1 }}>{rangeButtons.find(b => b.id === displayRange)?.label}</strong> adatcsomag (Szélsebesség, Irány) letöltése.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} />
-              <button onClick={handleExport} style={{ padding: '10px 24px', background: th.a, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', ...ui, fontSize: 13, transition: 'background 0.2s' }}>
-                ↓ Letöltés
+              <FormatPill exportFormat={exportFormat} setExportFormat={setExportFormat} th={th} isFetching={isFetching} />
+              <button onClick={handleExport} disabled={isFetching} style={{ padding: '10px 24px', background: th.a, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: isFetching ? 'not-allowed' : 'pointer', ...ui, fontSize: 13, transition: 'all 0.3s', whiteSpace: 'nowrap', opacity: isFetching ? 0.6 : 1 }}>
+                {isFetching ? '⏳ Előkészítés...' : '↓ Letöltés'}
               </button>
             </div>
           </div>
@@ -3427,37 +3520,45 @@ function WindPage({ th, addToast}) {
   );
 }
 
-
 /* ═══════════════ DASHBOARD MAIN CONTENT ═══════════════ */
-function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage, appLoaded, liveTemp }) {
+function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLoaded, liveData, chartHourly, chartWeekly }) {
   const [show, setShow] = useState(false);
-  const [rangeW, setRangeW] = useState(0);
 
   useEffect(() => {
     setShow(false); 
-    setRangeW(0); 
     const t = setTimeout(() => setShow(true), 90);
     return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => {
-    if (!show) return;
-    const t = setTimeout(() => setRangeW(((R.temp - R.tempMin) / (R.tempMax - R.tempMin)) * 100), 400);
-    return () => clearTimeout(t);
-  }, [show]);
+  // Kiszámoljuk a csúszka aktuális pozícióját százalékban
+  const tempPct = Math.max(0, Math.min(100, ((liveData.temp - R.tempMin) / (R.tempMax - R.tempMin)) * 100));
+  // Ha az oldal még nem úszott be, 0-n tartjuk a golyót az animáció kedvéért
+  const activeRangeW = show ? tempPct : 0;
 
   const metrics = [
-    { label: 'Páratartalom', value: R.humidity, unit: '%', color: th.p, bar: R.humidity, icon: '💧' },
-    { label: 'Légnyomás', value: R.pressure, unit: 'hPa', color: th.v, bar: ((R.pressure - 980) / 60) * 100, icon: '◎' },
-    { label: 'Szélerősség', value: R.windSpeed, unit: 'km/h', color: th.a, bar: (R.windSpeed / 60) * 100, icon: '⟁' },
-    { label: 'UV Index', value: R.uvIndex, unit: '', color: th.w, bar: (R.uvIndex / 11) * 100, icon: '☀' },
+    { label: 'Páratartalom', value: liveData.humidity, unit: '%', color: th.p, bar: liveData.humidity, icon: '💧', format: v => Math.round(v).toString() },
+    { label: 'Légnyomás', value: liveData.pressure, unit: 'hPa', color: th.v, bar: ((liveData.pressure - 980) / 60) * 100, icon: '◎', format: v => v.toFixed(1) },
+    { label: 'Szélerősség', value: liveData.windSpeed, unit: 'km/h', color: th.a, bar: (liveData.windSpeed / 60) * 100, icon: '⟁', format: v => v.toFixed(1) },
+    { label: 'UV Index', value: liveData.uvIndex, unit: '', color: getUvInfo(liveData.uvIndex).color, bar: (liveData.uvIndex / 11) * 100, icon: '☀', format: v => v.toFixed(1) },
   ];
   
   const status = [
-    { label: 'Akkumulátor', value: 78, color: th.a },
-    { label: 'Wi-Fi Jelerősség', value: 92, color: th.p },
-    { label: 'Flash Tárhely', value: 34, color: th.v },
+    { label: 'Akkumulátor', value: liveData.battery, color: th.a, unit: '%', bar: liveData.battery, format: v => Math.round(v).toString() },
+    { label: 'Wi-Fi Jelerősség', value: liveData.wifi, color: th.p, unit: '%', bar: liveData.wifi, format: v => Math.round(v).toString() },
+    { label: 'Belső Hőmérséklet', value: liveData.internalTemp, color: th.v, unit: '°C', bar: Math.min(100, liveData.internalTemp), format: v => v.toFixed(1) }, 
   ];
+
+  // ── ÚJ: Dinamikus grafikon-adat (A Path Morphing előkészítése) ──
+  // Lemásoljuk a statikus grafikon adatokat, de a LEGUTOLSÓ pontot rákötjük az élő szenzorra!
+  const dynamicHourly = useMemo(() => {
+    const dataCopy = [...hourly];
+    dataCopy[dataCopy.length - 1] = {
+      ...dataCopy[dataCopy.length - 1],
+      t: liveData.temp,
+      rh: liveData.humidity
+    };
+    return dataCopy;
+  }, [liveData.temp, liveData.humidity]);
 
   const ChartTip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -3477,19 +3578,22 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
 
   return (
     <div className="page-container">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
-        <div>
-          <h1 style={{ ...ui, fontSize: 'clamp(22px,3.2vw,36px)', fontWeight: 700, color: th.hTitle, margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em' }}>Telemetriai Dashboard</h1>
-          <p style={{ ...ui, fontSize: 13, color: th.hSub, margin: '6px 0 0', opacity: 0.85 }}>Hajdúböszörmény · Kliensoldali Vezérlőpult v1.0</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ ...tech, fontSize: 'clamp(22px,2.8vw,34px)', fontWeight: 500, color: th.hClock, letterSpacing: '-0.02em' }}>{clock.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
-          <div style={{ ...ui, fontSize: 13, color: th.hSub, marginTop: 4, fontWeight: 500 }}>{clock.toLocaleDateString('hu-HU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-        </div>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 32, opacity: show ? 1 : 0, transform: show ? 'translateY(0)' : 'translateY(-14px)', transition: 'opacity .5s ease, transform .5s ease' }}>
+        <TextAura>
+          <div>
+            <h1 style={{ ...ui, fontSize: 'clamp(22px,3.2vw,36px)', fontWeight: 700, color: th.hTitle, margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em', textShadow: '0 4px 24px rgba(0,0,0,0.3), 0 0 6px rgba(0,0,0,0.15)' }}>Telemetriai Dashboard</h1>
+            <p style={{ ...ui, fontSize: 13, color: th.hSub, margin: '6px 0 0', opacity: 0.85, textShadow: '0 2px 12px rgba(0,0,0,0.3), 0 0 4px rgba(0,0,0,0.15)' }}>Hajdúböszörmény · Kliensoldali Vezérlőpult v1.0</p>
+          </div>
+        </TextAura>
+
+        {/* Itt hívjuk meg az elszigetelt, független órát! */}
+        <TextAura>
+          <LiveHeaderTime th={th} />
+        </TextAura>
       </header>
 
       <div style={{ marginBottom: 24 }}>
-        <SmartCapsule th={th} show={show} phase={phase} isRaining={isRaining} isWindy={isWindy} />
+        <SmartCapsule th={th} show={show} phase={phase} isRaining={isRaining} isWindy={isWindy} liveData={liveData} appLoaded={appLoaded} />
       </div>
 
       <div className='mg' style={{ display: 'grid', gridTemplateColumns: 'repeat(12,1fr)', gap: 20 }}>
@@ -3510,16 +3614,22 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
               </>
             }>
               <div style={{ ...tech, fontWeight: 600, fontSize: 'clamp(54px,5.5vw,82px)', color: th.w, lineHeight: 1, marginTop: 4, letterSpacing: '-0.04em' }}>
-                <OdometerNumber value={liveTemp} />
+                <OdometerNumber value={liveData.temp} />
                 <span style={{ ...ui, fontSize: '.4em', color: th.t2, fontWeight: 300, marginLeft: 2, verticalAlign: 'super', letterSpacing: 0 }}>°C</span>
               </div>
               <div style={{ display: 'flex', gap: 24, marginTop: 18, flexWrap: 'wrap' }}>
-                {[['Hőérzet', R.feelsLike + '°C', th.w], ['Harmatpont', R.dewPoint + '°C', th.p]].map(([l, v, c]) => (
-                  <div key={l}>
-                    <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 2 }}>{l}</div>
-                    <div style={{ ...tech, fontSize: 15, color: th.t1, fontWeight: 500 }}>{v}</div>
+                <div>
+                  <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 2 }}>Hőérzet</div>
+                  <div style={{ ...tech, fontSize: 15, color: th.t1, fontWeight: 500, display: 'flex', alignItems: 'baseline' }}>
+                    <OdometerNumber value={liveData.feelsLike} /><span style={{ marginLeft: 1 }}>°C</span>
                   </div>
-                ))}
+                </div>
+                <div>
+                  <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 2 }}>Harmatpont</div>
+                  <div style={{ ...tech, fontSize: 15, color: th.t1, fontWeight: 500, display: 'flex', alignItems: 'baseline' }}>
+                    <OdometerNumber value={liveData.dewPoint} /><span style={{ marginLeft: 1 }}>°C</span>
+                  </div>
+                </div>
               </div>
               <div style={{ marginTop: 24 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, ...ui, fontSize: 11, color: th.t2 }}>
@@ -3527,8 +3637,22 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
                   <span>Max {R.tempMax}°C</span>
                 </div>
                 <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99, background: `linear-gradient(90deg,${th.p},${th.w})`, width: `${rangeW}%`, transition: 'width 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
-                  <div style={{ position: 'absolute', top: '50%', left: `${rangeW}%`, transform: 'translate(-50%,-50%)', width: 12, height: 11, borderRadius: '50%', background: th.w, boxShadow: `0 0 10px ${th.w}`, transition: 'left 2s cubic-bezier(0.16, 1, 0.3, 1) .5s' }} />
+                  {/* 1. Folyadék vonal GPU gyorsítással (scaleX) */}
+                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99, background: `linear-gradient(90deg,${th.p},${th.w})`, width: '100%', transformOrigin: 'left', transform: `scaleX(${activeRangeW / 100})`, transition: 'transform 1s cubic-bezier(0.34, 1.56, 0.64, 1) .1s', willChange: 'transform' }} />
+                  
+                  {/* 2. ÚJ: A csúszka golyója egy hardvergyorsított "hordozó" réteget kap (translateX) a darabos 'left' animáció helyett! */}
+                  <div style={{ 
+                    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
+                    transform: `translateX(${activeRangeW}%)`, 
+                    transition: 'transform 1s cubic-bezier(0.34, 1.56, 0.64, 1) .1s', 
+                    willChange: 'transform', pointerEvents: 'none' 
+                  }}>
+                    {/* Maga a golyó statikusan ül a hordozó bal szélén, és csak a saját középpontjához van igazítva */}
+                    <div style={{ 
+                      position: 'absolute', top: '50%', left: 0, transform: 'translate(-50%,-50%)', 
+                      width: 12, height: 11, borderRadius: '50%', background: th.w, boxShadow: `0 0 10px ${th.w}` 
+                    }} />
+                  </div>
                 </div>
               </div>
             </SkeletonWrapper>
@@ -3553,17 +3677,27 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
             }>
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
-                  <div style={{ fontSize: 44, lineHeight: 1 }}>{isRaining ? '🌧' : (phase === 'night' || phase === 'evening') ? '🌙' : (phase === 'dawn' || phase === 'sunset') ? '🌅' : '⛅'}</div>
+                  {/* HELYES POZÍCIÓ: Itt a valós tartalomban hívjuk meg a BlurFadeText-et! */}
+                  <BlurFadeText 
+                    text={isRaining ? '🌧' : (phase === 'night' || phase === 'evening') ? '🌙' : (phase === 'dawn' || phase === 'sunset') ? '🌅' : '⛅'} 
+                    style={{ fontSize: 44, lineHeight: 1 }} 
+                  />
                   <div>
-                    <div style={{ ...ui, fontSize: 18, fontWeight: 600, color: th.t1, letterSpacing: '-0.01em' }}>{isRaining ? 'Csapadékos Idő' : (phase === 'night' || phase === 'evening') ? 'Tiszta Éjszaka' : (phase === 'dawn') ? 'Napfelkelte' : (phase === 'sunset') ? 'Naplemente' : 'Enyhén Felhős'}</div>
+                    <BlurFadeText 
+                      text={isRaining ? 'Csapadékos Idő' : (phase === 'night' || phase === 'evening') ? 'Tiszta Éjszaka' : (phase === 'dawn') ? 'Napfelkelte' : (phase === 'sunset') ? 'Naplemente' : 'Enyhén Felhős'} 
+                      style={{ ...ui, fontSize: 18, fontWeight: 600, color: th.t1, letterSpacing: '-0.01em', display: 'block' }} 
+                    />
                     <div style={{ ...ui, fontSize: 13, color: th.t2, marginTop: 2 }}>Mérési folyamat stabil</div>
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'auto', paddingTop: 16 }}>
-                  {[{ l: 'Látótávolság', v: R.visibility, u: 'km' }, { l: 'Csapadék', v: R.precipitation, u: 'mm/h' }].map(({ l, v, u }) => (
+                  {[{ l: 'Látótávolság', v: liveData.visibility, u: 'km' }, { l: 'Csapadék', v: liveData.precipitation, u: 'mm/h' }].map(({ l, v, u }) => (
                     <div key={l} style={{ background: th.id==='day'?'rgba(15,23,42,0.02)':'rgba(255,255,255,0.02)', borderRadius: 16, padding: '12px 14px', border: `1px solid ${th.border}` }}>
                       <div style={{ ...ui, fontSize: 11, color: th.t2, marginBottom: 4 }}>{l}</div>
-                      <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: th.t1 }}>{v}<span style={{ ...ui, fontSize: 12, color: th.t2, marginLeft: 2, fontWeight: 400 }}>{u}</span></div>
+                      <div style={{ ...tech, fontSize: 18, fontWeight: 600, color: th.t1, display: 'flex', alignItems: 'baseline' }}>
+                        <OdometerNumber value={v} format={n => n.toFixed(1)} />
+                        <span style={{ ...ui, fontSize: 12, color: th.t2, marginLeft: 2, fontWeight: 400 }}>{u}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -3574,14 +3708,14 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
 
         {/* ── 3. A 4 KIS METRIKA ── */}
         <div className='mini2' style={{ gridColumn: 'span 4', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 12 }}>
-          {metrics.map(({ label, value, unit, color, bar, icon }, i) => (
+          {/* JAVÍTÁS: Itt adtuk hozzá a 'format' változót a kicsomagoláshoz! */}
+          {metrics.map(({ label, value, unit, color, bar, icon, format }, i) => (
             <Card key={label} show={show} delay={190 + i * 55} t={th} style={{ padding: '16px 14px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
                 <Lbl t={th} style={{ flex: 1, minWidth: 0, marginBottom: 4, paddingRight: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</Lbl>
                 <span style={{ fontSize: 14, opacity: .5, flexShrink: 0 }}>{icon}</span>
               </div>
               <div style={{ flex: 1, minHeight: 46 }}>
-                {/* LÉPÉSZETES IDŐZÍTÉS: delay dinamikusan generálva (300, 350, 400, 450ms) */}
                 <SkeletonWrapper isLoaded={appLoaded} delay={300 + i * 50} skeleton={
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
                     <SkeletonBlock w="70%" h={28} br={6} th={th} style={{ marginTop: 2 }} />
@@ -3589,7 +3723,11 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
                   </div>
                 }>
                   <div style={{ ...tech, fontSize: 24, fontWeight: 600, color, lineHeight: 1, marginTop: 4, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {value}<span style={{ ...ui, fontSize: 12, color: th.t2, fontWeight: 400, marginLeft: 2 }}>{unit}</span>
+                    
+                    {/* Itt már biztonságosan megkapja a format szabályt */}
+                    <OdometerNumber value={value} format={format} />
+                    
+                    <span style={{ ...ui, fontSize: 12, color: th.t2, fontWeight: 400, marginLeft: 2 }}>{unit}</span>
                   </div>
                   <Bar3 pct={bar} color={color} show={show} delay={300 + i * 50} />
                 </SkeletonWrapper>
@@ -3618,7 +3756,7 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
             {/* LÉPÉSZETES IDŐZÍTÉS: delay={500} */}
             <SkeletonWrapper isLoaded={appLoaded} delay={500} skeleton={<SkeletonBlock w="100%" h="100%" br={12} th={th} />}>
               <ResponsiveContainer width='100%' height="100%">
-                <AreaChart data={hourly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                <AreaChart data={chartHourly} margin={{ top: 4, right: 24, bottom: 0, left: -10 }}>
                   <defs>
                     <linearGradient id='gT' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cT} stopOpacity={.15} /><stop offset='95%' stopColor={th.cT} stopOpacity={0} /></linearGradient>
                     <linearGradient id='gH' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cH} stopOpacity={.10} /><stop offset='95%' stopColor={th.cH} stopOpacity={0} /></linearGradient>
@@ -3627,8 +3765,9 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
                   <XAxis dataKey='h' tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} interval={3} />
                   <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Area type='monotone' dataKey='t' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} />
-                  <Area type='monotone' dataKey='rh' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} />
+                  {/* ÚJ: Gumiszalag animációk (1200ms ease-in-out) */}
+                  <Area type='monotone' dataKey='t' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
+                  <Area type='monotone' dataKey='rh' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
                 </AreaChart>
               </ResponsiveContainer>
             </SkeletonWrapper>
@@ -3638,10 +3777,23 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
         {/* ── 5. SZÉL KOMPASZ ── */}
         <Card show={show} delay={460} t={th} className='gc4' style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
           <Lbl t={th}>Széladatok</Lbl>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 210 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 210 }}>
             {/* LÉPÉSZETES IDŐZÍTÉS: delay={600} */}
             <SkeletonWrapper isLoaded={appLoaded} delay={600} skeleton={<SkeletonBlock w={180} h={180} br="50%" th={th} />}>
-              <WindCompass show={show} t={th} />
+              
+              <WindCompass show={show} t={th} direction={liveData.windDir} />
+              
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: -8 }}>
+                <div style={{ ...tech, fontSize: 26, fontWeight: 700, color: th.t1, display: 'flex' }}>
+                  <OdometerNumber value={liveData.windDir} format={v => Math.round(v).toString()} />°
+                </div>
+                {/* ÚJ: Szöveges irányjelző áttűnése (pl. É-ÉK) */}
+                <BlurFadeText 
+                  text={getWindLabel(liveData.windDir)} 
+                  style={{ ...ui, fontSize: 15, color: th.t2, fontWeight: 500 }} 
+                />
+              </div>
+
             </SkeletonWrapper>
           </div>
         </Card>
@@ -3656,11 +3808,12 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
             {/* LÉPÉSZETES IDŐZÍTÉS: delay={700} */}
             <SkeletonWrapper isLoaded={appLoaded} delay={700} skeleton={<SkeletonBlock w="100%" h="100%" br={12} th={th} />}>
               <ResponsiveContainer width='100%' height="100%">
-                <BarChart data={weekly} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                <BarChart data={chartWeekly} margin={{ top: 4, right: 24, bottom: 0, left: -10 }}>
                   <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
                   <XAxis dataKey='d' tick={{ fontFamily: "'Inter',sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
-                  <Bar dataKey='mm' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  {/* ÚJ: Folyadékszerűen növekvő oszlop animáció (1000ms ease-out) */}
+                  <Bar dataKey='mm' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" />
                 </BarChart>
               </ResponsiveContainer>
             </SkeletonWrapper>
@@ -3686,27 +3839,33 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
               </div>
             }>
               <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {status.map(({ label, value, color }, i) => (
+                {status.map(({ label, value, color, unit, bar, format }, i) => (
                   <div key={label}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, ...ui, fontSize: 13 }}>
                       <span style={{ color: th.t2 }}>{label}</span>
-                      <span style={{ ...tech, color, fontWeight: 600 }}>{value}%</span>
+                      <span style={{ ...tech, color, fontWeight: 600, display: 'flex', alignItems: 'baseline' }}>
+                        <PremiumUpdateValue value={format(value)} th={th} />
+                        <span style={{ ...ui, fontSize: 11, color: th.t2, marginLeft: 2, fontWeight: 500 }}>{unit}</span>
+                      </span>
                     </div>
                     <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', borderRadius: 99, background: color, width: show ? `${value}%` : 0, transition: `width 1.6s cubic-bezier(0.16, 1, 0.3, 1) ${720 + i * 110}ms` }} />
+                      {/* ÚJ: Rendszeradatok GPU gyorsított vajsima rugóanimációja */}
+                      <div style={{ height: '100%', borderRadius: 99, background: color, width: '100%', transformOrigin: 'left', transform: `scaleX(${show ? bar / 100 : 0})`, transition: `transform 1s cubic-bezier(0.34, 1.56, 0.64, 1) ${720 + i * 110}ms`, willChange: 'transform' }} />
                     </div>
                   </div>
                 ))}
                 <div style={{ marginTop: 6, paddingTop: 14, borderTop: `1px solid ${th.border}` }}>
                   {[
-                    ['Alvó Ciklusok (Ma)', '247', th.a],
-                    ['Deep Sleep Arány', '91.3%', th.p],
-                    ['Uptime diagnosztika', '14d 07h 22m', th.t1],
-                    ['Sikeres Adatcsomagok', '12,864', th.v],
+                    ['Alvó Ciklusok (Ma)', liveData.sleepCycles, th.a],
+                    ['Deep Sleep Arány', `${liveData.deepSleep}%`, th.p],
+                    ['Uptime diagnosztika', '14d 07h 22m', th.t1], // Statikus marad
+                    ['Sikeres Adatcsomagok', liveData.packets.toLocaleString('hu-HU'), th.v],
                   ].map(([l, v, c]) => (
                     <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, ...ui, fontSize: 12.5 }}>
                       <span style={{ color: th.t2 }}>{l}</span>
-                      <span style={{ ...tech, color: c, fontWeight: 500 }}>{v}</span>
+                      <span style={{ ...tech, color: c, fontWeight: 500 }}>
+    {l === 'Uptime diagnosztika' ? v : <PremiumUpdateValue value={v} th={th} />}
+  </span>
                     </div>
                   ))}
                 </div>
@@ -3716,19 +3875,7 @@ function DashboardContent({ phase, th, clock, isRaining, isWindy, setCurrentPage
         </Card>
       </div>
 
-      <div style={{ marginTop: 24, background: th.card, border: `1px solid ${th.border}`, borderRadius: 20, padding: '16px 24px', display: 'flex', flexWrap: 'wrap', gap: '12px 40px', opacity: show ? 1 : 0, transition: 'opacity .6s ease 1s, background 1s ease', boxShadow: th.id==='day'?'0 10px 30px rgba(0,0,0,0.02)':'0 20px 40px rgba(0,0,0,0.15)' }}>
-        {[
-          ['MQTT Broker', '192.168.1.10:1883'], ['Protokoll', 'MQTT v3.1.1'],
-          ['Adatbázis', 'InfluxDB 2.7'], ['Mikrokontroller', 'ESP32-S3'],
-          ['Firmware', 'v1.0.4-stable'], ['Alvási Ciklus', '60s · Deep Sleep'],
-          ['API Backend', 'Node.js / Express'], ['Frontend', 'React 18'],
-        ].map(([l, v]) => (
-          <div key={l}>
-            <div style={{ ...ui, fontSize: 9.5, letterSpacing: '.05em', textTransform: 'uppercase', color: th.lbl, fontWeight: 600, marginBottom: 2 }}>{l}</div>
-            <div style={{ ...tech, fontSize: 13, color: th.t1, fontWeight: 400 }}>{v}</div>
-          </div>
-        ))}
-      </div>
+      
     </div>
   );
 }
@@ -3808,11 +3955,10 @@ export default function App() {
   const [simPhase, setSimPhase] = useState('day');
   const [simRain, setSimRain] = useState(false);
   const [simWind, setSimWind] = useState(false);
-  const [clock, setClock] = useState(new Date());
   // ─── IOT IDŐGÉP ÉS SZIMULÁTOR ───
   const [mockTimeOffset, setMockTimeOffset] = useState(0);
   const [lastDataTimestamp, setLastDataTimestamp] = useState(Date.now());
-  const simulatedTime = new Date(clock.getTime() + mockTimeOffset);
+  const simulatedTime = new Date(Date.now() + mockTimeOffset);
 
   // ─── TOAST: 1. A memóriatároló és az indító függvény ───
   const [toasts, setToasts] = useState([]);
@@ -3820,35 +3966,60 @@ export default function App() {
   // ─── HIDEGINDÍTÁS (COLD START) ÁLLAPOT ───
   const [appLoaded, setAppLoaded] = useState(false);
 
-// Élő, frissülő adatok beállítása
-  const [liveTemp, setLiveTemp] = useState(R.temp);  
-  // Opcionális: a többi adatnak is csinálhatsz state-t, pl:
-  // const [liveHum, setLiveHum] = useState(null);
+  // ÚJ: Grafikonok globális állapota a "Csúszó Ablak" (Sliding Window) effektushoz
+  const [chartHourly, setChartHourly] = useState(hourly);
+  const [chartWeekly, setChartWeekly] = useState(weekly);
 
+  // Élő, frissülő adat szimulációja minden kártyához
+  const [liveData, setLiveData] = useState({
+    temp: R.temp,
+    humidity: R.humidity,
+    pressure: R.pressure,
+    windSpeed: R.windSpeed,
+    uvIndex: R.uvIndex,
+    windDir: R.windDir,
+    feelsLike: R.feelsLike,
+    dewPoint: R.dewPoint,
+    visibility: R.visibility,
+    precipitation: R.precipitation,
+    // ÚJ RENDSZER ADATOK:
+    battery: 78,
+    wifi: 92,
+    internalTemp: 42.5, // ÚJ: ESP32-S3 Belső hőmérséklet
+    packets: 12864,
+    sleepCycles: 247,
+    deepSleep: 91.3
+  });
   useEffect(() => {
     const fetchLatestData = async () => {
       try {
-        // Hívjuk a saját, biztonságos Vercel API végpontunkat
         const response = await fetch('/api/latest');
+        if (!response.ok) throw new Error('API nem elérhető lokálisan');
+        
         const data = await response.json();
         
-        if (data.temperature) {
-          setLiveTemp(data.temperature);
-          // Itt állíthatod majd be a többi értéket is:
-          // R.humidity = data.humidity;
-          // R.windSpeed = data.wind_speed;
-          // setLastDataTimestamp(new Date(data._time).getTime()); // Frissíti a felső "Sync Ring"-et
+        if (data.temperature !== undefined) {
+          setLiveData(prev => ({
+            ...prev,
+            temp: data.temperature,
+            humidity: data.humidity,
+            pressure: data.pressure || prev.pressure, 
+            windSpeed: data.wind_speed !== undefined ? data.wind_speed : prev.windSpeed,
+            windDir: data.wind_direction !== undefined ? data.wind_direction : prev.windDir,
+            precipitation: data.rain !== undefined ? data.rain : prev.precipitation,
+            battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery
+          }));
+          if (data._time) setLastDataTimestamp(new Date(data._time).getTime()); 
         }
         setAppLoaded(true);
       } catch (error) {
-        console.error("Hiba az adatok letöltésekor:", error);
-        setAppLoaded(true); // Fallback: hiba esetén is jelenjen meg az oldal
+        // Lokális fejlesztésnél ide ugrik be, így a MOCK DATA marad a képernyőn!
+        console.log("Lokális mód: Statikus adatok használata az élő adatok helyett.");
+        setAppLoaded(true); 
       }
     };
 
     fetchLatestData();
-    
-    // Automatikus frissítés 15 percenként
     const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -3863,9 +4034,11 @@ export default function App() {
   };
   // ────────────────────────────────────────────────────────
 
-  const phase = simPhase || getPhase(clock.getHours());
-  const isRaining = simRain || (R.precipitation > 0);
-  const isWindy = simWind || (R.windSpeed > 25);
+  // JAVÍTÁS: Most már a liveData-t figyelik, így a gombnyomásra reagálni fognak!
+  const currentHour = new Date().getHours();
+  const phase = simPhase || getPhase(currentHour);
+  const isRaining = simRain || (liveData.precipitation > 0);
+  const isWindy = simWind || (liveData.windSpeed > 25);
   const th = TH[phase];
 
   // Automatikus görgetés a lap tetejére oldalváltáskor
@@ -3898,6 +4071,13 @@ export default function App() {
       .skeleton-base {
         background-size: 200% 100%;
         animation: skeleton-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+
+      /* ─── ULTRA-PREMIUM APPLE-STYLE UPDATE ANIMATION ─── */
+      @keyframes premium-data-update {
+        0% { opacity: 0; transform: translateY(4px) scale(0.95); color: var(--flash-color); }
+        12% { opacity: 1; transform: translateY(0) scale(1); color: var(--flash-color); }
+        100% { opacity: 1; transform: translateY(0) scale(1); color: inherit; }
       }
 
       /* A TOAST ANIMÁCIÓJA */
@@ -3943,13 +4123,7 @@ export default function App() {
         padding: 0 0 0 16px; transition: background 1s ease, border-color 1s ease, bottom 0.4s ease, top 0.4s ease;
       }
       
-      .smart-nav-scroll {
-        display: flex; align-items: center; gap: 4px; padding-right: 32px; 
-        height: 100%; flex: 1; overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
-        -webkit-mask-image: linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%);
-        mask-image: linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%);
-      }
-      .smart-nav-scroll::-webkit-scrollbar { display: none; }
+      /* A smart-nav-scroll eltűnt, mert inline style-okba tettük a GPU gyorsításhoz */
 
       .nav-logo { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-right: 8px; padding-right: 12px; }
       .nav-btn { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 99px; cursor: pointer; border: 1px solid transparent; transition: all 0.3s cubic-bezier(0.16,1,0.3,1); outline: none; flex-shrink: 0; white-space: nowrap; }
@@ -3960,8 +4134,7 @@ export default function App() {
       @media(max-width: 900px) {
         .page-container { padding: 40px 24px 110px !important; }
         .smart-nav-wrapper { top: auto !important; bottom: 16px !important; width: calc(100% - 24px) !important; height: auto !important; border-radius: 24px !important; padding: 0 4px !important; }
-        .smart-nav-scroll { padding: 8px 0 !important; justify-content: space-between !important; width: 100%; -webkit-mask-image: none !important; mask-image: none !important; }
-        .nav-logo { display: none !important; }
+        /* .smart-nav-scroll { padding: 8px 0 !important; justify-content: space-between !important; width: 100%; -webkit-mask-image: none !important; mask-image: none !important; } */        .nav-logo { display: none !important; }
         .nav-btn { flex-direction: column !important; gap: 4px !important; padding: 8px 2px !important; flex: 1 1 0px !important; min-width: 0 !important; border-radius: 16px !important; }
         .nav-icon { font-size: 20px !important; }
         .nav-label { display: none !important; }
@@ -3976,11 +4149,6 @@ export default function App() {
       `;
     document.head.appendChild(st);
     return () => { try { document.head.removeChild(lk); document.head.removeChild(st); } catch (e) { } };
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => setClock(new Date()), 1000);
-    return () => clearInterval(id);
   }, []);
 
 // ─── DINAMIKUS BÖNGÉSZŐFÜL (FAVICON ÉS CÍMSOR) ───
@@ -4016,7 +4184,7 @@ export default function App() {
     // 3. Szöveg logika (Kontextusfüggő adatok)
     const pageLabels = {
       'dashboard': 'Főoldal', 'temperature': 'Hőmérséklet', 'humidity': 'Páratartalom',
-      'pressure': 'Légnyomás', 'brightness': 'Fényerő & UV', 'precipitation': 'Csapadék', 'wind': 'Széladatok'
+      'pressure': 'Légnyomás', 'brightness': 'UV és Fényerő', 'precipitation': 'Csapadék', 'wind': 'Széladatok'
     };
 
     // Kiválasztjuk az aloldalhoz illő legfontosabb adatot
@@ -4049,15 +4217,14 @@ export default function App() {
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
       case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} />;
       case 'wind':          return <WindPage th={th} addToast={addToast} />;
-      default: return <DashboardContent phase={phase} th={th} clock={clock} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveTemp={liveTemp} />;
-    }
-  };
+      default: return <DashboardContent phase={phase} th={th} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveData={liveData} chartHourly={chartHourly} chartWeekly={chartWeekly} />;
+    }  };
   // ─────────────────────────────────────────────────────────────
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', color: th.t1, fontFamily: "'Inter', sans-serif", transition: 'color 1.5s ease' }}>
       
-      <SkyBackground phase={phase} hour={clock.getHours()} isRaining={isRaining} isWindy={isWindy} />
+      <SkyBackground phase={phase} hour={currentHour} isRaining={isRaining} isWindy={isWindy} />
       <NavBar 
         currentPage={currentPage} setCurrentPage={setCurrentPage} th={th} 
         simulatedTime={simulatedTime} lastDataTimestamp={lastDataTimestamp} 
@@ -4104,8 +4271,59 @@ export default function App() {
           </button>
           <button onClick={() => { 
             setLastDataTimestamp(simulatedTime.getTime()); 
-            // Varázslat: Minden kattintásnál véletlenszerűen +0.3 vagy -0.3 fokot adunk az élő adathoz!
-            setLiveTemp(prev => parseFloat((prev + (Math.random() > 0.5 ? 0.3 : -0.3)).toFixed(1)));
+            
+            setLiveData(prev => {
+              // Nagyobb kilengések, hogy látványosabb legyen a grafikon hajlása
+              const newTemp = parseFloat((prev.temp + (Math.random() > 0.5 ? 0.9 : -0.9)).toFixed(1));
+              const newHum = Math.max(0, Math.min(100, Math.round(prev.humidity + (Math.random() > 0.5 ? 4 : -4))));
+              
+              // Csapadék szimulálása: 40% esély egy hirtelen zuhéra (0 - 2.5 mm között)
+              const precipSpike = Math.random() > 0.6 ? parseFloat((Math.random() * 2.5).toFixed(1)) : 0;
+              const newPrecip = parseFloat((prev.precipitation + precipSpike).toFixed(1));
+
+              // 1. GÖRDÜLŐ ABLAK (Sliding Window): A 24 órás trendhez
+              setChartHourly(prevChart => {
+                const newChart = [...prevChart.slice(1)]; // Levágjuk az első (legrégebbi) órát (csúszás balra)
+                const lastTime = prevChart[prevChart.length - 1].h;
+                let [hh] = lastTime.split(':');
+                let nextH = (parseInt(hh, 10) + 1) % 24;
+                // Hozzáadjuk a legújabb időpontot a végére
+                newChart.push({ h: `${String(nextH).padStart(2, '0')}:00`, t: newTemp, rh: newHum });
+                return newChart;
+              });
+
+              // 2. FOLYADÉK OSZLOP: A heti csapadékhoz
+              if (precipSpike > 0) {
+                setChartWeekly(prevChart => {
+                  const newChart = [...prevChart];
+                  // A legutolsó (Vasárnapi) oszlophoz folyamatosan hozzáadjuk a leesett esőt
+                  newChart[newChart.length - 1] = {
+                    ...newChart[newChart.length - 1],
+                    mm: parseFloat((newChart[newChart.length - 1].mm + precipSpike).toFixed(1))
+                  };
+                  return newChart;
+                });
+              }
+
+              return {
+                ...prev,
+                temp: newTemp, humidity: newHum, precipitation: newPrecip,
+                pressure: parseFloat((prev.pressure + (Math.random() > 0.5 ? 1.2 : -1.2)).toFixed(1)),
+                windSpeed: parseFloat((Math.max(0, prev.windSpeed + (Math.random() > 0.5 ? 2.5 : -1.5))).toFixed(1)),
+                uvIndex: parseFloat((Math.max(0, prev.uvIndex + (Math.random() > 0.5 ? 0.4 : -0.4))).toFixed(1)),
+                windDir: Math.round((prev.windDir + (Math.random() * 50 - 25) + 360) % 360),
+                feelsLike: parseFloat((newTemp - 1.2 + Math.random() * 0.5).toFixed(1)), 
+                dewPoint: parseFloat((newTemp - 6.5 + Math.random() * 0.5).toFixed(1)),  
+                visibility: parseFloat((Math.max(1, prev.visibility + (Math.random() > 0.5 ? 0.2 : -0.2))).toFixed(1)),
+                battery: Math.max(0, Math.min(100, prev.battery + (Math.random() > 0.8 ? -1 : 0))), 
+                wifi: Math.max(0, Math.min(100, Math.round(prev.wifi + (Math.random() > 0.5 ? 3 : -3)))), 
+                // A belső hő egy picit követi a külső hőt, de melegebb
+                internalTemp: parseFloat((newTemp + 18 + Math.random() * 2).toFixed(1)),
+                packets: prev.packets + Math.floor(Math.random() * 8 + 1),
+                sleepCycles: prev.sleepCycles + (Math.random() > 0.6 ? 1 : 0),
+                deepSleep: parseFloat((Math.max(0, Math.min(100, prev.deepSleep + (Math.random() > 0.5 ? 0.2 : -0.2)))).toFixed(1))
+              };
+            });
             addToast("Új szenzor adatcsomag beérkezett!"); 
           }}
             style={{ padding: '4px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(52, 211, 153, 0.85)', border: '1px solid rgba(255,255,255,0.28)', color: '#022c22', fontFamily: "'Inter', sans-serif", fontSize: 10, letterSpacing: '.08em', fontWeight: 700 }}>
