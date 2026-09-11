@@ -1481,10 +1481,10 @@ function TemperaturePage({ th, addToast }) {
   // A gombok stílusa már a selectedRange (azonnali) állapotra reagál
   const btnStyle = (id) => ({
     padding: '5px 14px', borderRadius: 99, cursor: 'pointer',
-    background: selectedRange === id ? (th.id === 'day' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.10)') : activeBtn === id ? (th.id === 'day' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.04)') : 'transparent',
-    border: selectedRange === id ? `1px solid ${th.border}` : '1px solid transparent',
-    color: selectedRange === id ? th.p : th.t2,
-    ...ui, fontSize: 12, fontWeight: selectedRange === id ? 600 : 400, transition: 'all 0.2s',
+    background: range === id ? (th.id === 'day' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.10)') : activeBtn === id ? (th.id === 'day' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.04)') : 'transparent',
+    border: range === id ? `1px solid ${th.border}` : '1px solid transparent',
+    color: range === id ? th.p : th.t2,
+    ...ui, fontSize: 12, fontWeight: range === id ? 600 : 400, transition: 'all 0.2s',
   });
 
   return (
