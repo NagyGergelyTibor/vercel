@@ -4035,7 +4035,12 @@ export default function App() {
   useEffect(() => {
     const fetchLatestData = async () => {
       try {
-        const response = await fetch('/api/latest');
+        // BIZTONSÁGI HÁLÓ: Letiltjuk a cache-elést, hogy mindig friss adat jöjjön!
+        const response = await fetch(`/api/latest?_=${Date.now()}`, { 
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        
         if (!response.ok) throw new Error('API nem elérhető lokálisan');
         
         const data = await response.json();
@@ -4097,8 +4102,8 @@ export default function App() {
       try {
         // Promise.all: Egyszerre (párhuzamosan) indítjuk a két hálózati kérést, így kétszer olyan gyors!
         const [resDaily, resWeekly] = await Promise.all([
-          fetch('/api/history?range=1d'),
-          fetch('/api/history?range=1w')
+          fetch(`/api/history?range=1d&_=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`/api/history?range=1w&_=${Date.now()}`, { cache: 'no-store' })
         ]);
         
         if (!resDaily.ok || !resWeekly.ok) throw new Error('API nem elérhető');
