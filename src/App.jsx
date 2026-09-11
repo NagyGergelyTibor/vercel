@@ -14,9 +14,9 @@ const R = {
 };
 
 const hourly = Array.from({ length: 24 }, (_, i) => ({
-  h: `${String(i).padStart(2, '0')}:00`,
-  t: parseFloat((18 + Math.sin((i - 14) * Math.PI / 12) * 6 + (Math.random() - .5) * 1.2).toFixed(1)),
-  rh: parseFloat((65 + Math.cos(i * Math.PI / 8) * 12 + (Math.random() - .5) * 4).toFixed(1)),
+  t: `${String(i).padStart(2, '0')}:00`,
+  temp: parseFloat((18 + Math.sin((i - 14) * Math.PI / 12) * 6 + (Math.random() - .5) * 1.2).toFixed(1)),
+  hum: parseFloat((65 + Math.cos(i * Math.PI / 8) * 12 + (Math.random() - .5) * 4).toFixed(1)),
 }));
 
 const weekly = [
@@ -3570,17 +3570,11 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
 
   // --- ÚJ: MIN/MAX SZÁMÍTÁS A 24 ÓRÁS ADATOKBÓL ---
   // Kinyerjük a hőmérsékleteket a grafikon tömbjéből (csak a valós értékeket)
-  const hourlyTemps = chartHourly.map(d => d.t).filter(t => t != null);
-  
-  // Hozzávesszük a jelenlegi élő adatot is, hogy a legfrissebb mérés azonnal érvényesüljön
+  // Figyelem: A kulcs 't' helyett 'temp' lett az InfluxDB kompatibilitás miatt!
+  const hourlyTemps = chartHourly.map(d => d.temp).filter(v => v != null);
   const tempMin = Math.min(...hourlyTemps, liveData.temp);
   const tempMax = Math.max(...hourlyTemps, liveData.temp);
-
-  // Kiszámoljuk a csúszka aktuális pozícióját százalékban az új Min/Max alapján
-  // (A tempMin === tempMax védelem megelőzi a nullával való osztást, ha esetleg minden adat azonos)
   const tempPct = tempMin === tempMax ? 50 : Math.max(0, Math.min(100, ((liveData.temp - tempMin) / (tempMax - tempMin)) * 100));
-  
-  // Ha az oldal még nem úszott be, 0-n tartjuk a golyót az animáció kedvéért
   const activeRangeW = show ? tempPct : 0;
 
   const metrics = [
@@ -3599,14 +3593,15 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
   // ── ÚJ: Dinamikus grafikon-adat (A Path Morphing előkészítése) ──
   // Lemásoljuk a statikus grafikon adatokat, de a LEGUTOLSÓ pontot rákötjük az élő szenzorra!
   const dynamicHourly = useMemo(() => {
-    const dataCopy = [...hourly];
+    if (!chartHourly || chartHourly.length === 0) return [];
+    const dataCopy = [...chartHourly];
     dataCopy[dataCopy.length - 1] = {
       ...dataCopy[dataCopy.length - 1],
-      t: liveData.temp,
-      rh: liveData.humidity
+      temp: liveData.temp,
+      hum: liveData.humidity
     };
     return dataCopy;
-  }, [liveData.temp, liveData.humidity]);
+  }, [liveData.temp, liveData.humidity, chartHourly]);
 
   const ChartTip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -3617,8 +3612,7 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: p.color }} />
             <span style={{ ...tech, fontSize: 13, fontWeight: 600, color: p.color }}>{typeof p.value === 'number' ? p.value.toFixed(1) : p.value}</span>
-            <span style={{ ...ui, fontSize: 12, color: th.t2 }}>{p.dataKey === 't' ? '°C' : '%'}</span>
-          </div>
+            <span style={{ ...ui, fontSize: 12, color: th.t2 }}>{p.dataKey === 'temp' ? '°C' : '%'}</span>          </div>
         ))}
       </div>
     );
@@ -3804,18 +3798,19 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
             {/* LÉPÉSZETES IDŐZÍTÉS: delay={500} */}
             <SkeletonWrapper isLoaded={appLoaded} delay={500} skeleton={<SkeletonBlock w="100%" h="100%" br={12} th={th} />}>
               <ResponsiveContainer width='100%' height="100%">
-                <AreaChart data={chartHourly} margin={{ top: 4, right: 24, bottom: 0, left: -10 }}>
+                <AreaChart data={dynamicHourly} margin={{ top: 4, right: 24, bottom: 0, left: -10 }}>
                   <defs>
                     <linearGradient id='gT' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cT} stopOpacity={.15} /><stop offset='95%' stopColor={th.cT} stopOpacity={0} /></linearGradient>
                     <linearGradient id='gH' x1='0' y1='0' x2='0' y2='1'><stop offset='5%' stopColor={th.cH} stopOpacity={.10} /><stop offset='95%' stopColor={th.cH} stopOpacity={0} /></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
-                  <XAxis dataKey='h' tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} interval={3} />
+                  <XAxis dataKey='t' tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} interval={3} />
                   <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  {/* ÚJ: Gumiszalag animációk (1200ms ease-in-out) */}
-                  <Area type='monotone' dataKey='t' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
-                  <Area type='monotone' dataKey='rh' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
+                  
+                  {/* Figyelem: A dataKey 'temp' és 'hum' lett a régi 't' és 'rh' helyett */}
+                  <Area type='monotone' dataKey='temp' stroke={th.cT} strokeWidth={2} fill='url(#gT)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
+                  <Area type='monotone' dataKey='hum' stroke={th.cH} strokeWidth={1.5} fill='url(#gH)' dot={false} isAnimationActive={true} animationDuration={1200} animationEasing="ease-in-out" />
                 </AreaChart>
               </ResponsiveContainer>
             </SkeletonWrapper>
@@ -4093,6 +4088,28 @@ export default function App() {
     fetchLatestData();
     // const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
     const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ─── ÚJ: A 24 ÓRÁS GRAFIKON ADATAINAK LEKÉRÉSE AZ API-BÓL ───
+  useEffect(() => {
+    const fetchHistoryData = async () => {
+      try {
+        const response = await fetch('/api/history?range=1d');
+        if (!response.ok) throw new Error('API nem elérhető');
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+          setChartHourly(data); // Beletöltjük az InfluxDB-ből kapott 24 órás adatokat
+        }
+      } catch (error) {
+        console.log("Lokális mód: 24 órás grafikon tesztadatokkal fut.");
+      }
+    };
+
+    fetchHistoryData();
+    // Ezt elég ritkábban (pl. 15 percenként) frissíteni, mert historikus adat
+    const interval = setInterval(fetchHistoryData, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
