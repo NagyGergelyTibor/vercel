@@ -661,20 +661,24 @@ function BlurFadeText({ text, style }) {
    közelítő módszerrel becsüljük: minél kisebb a hőmérséklet és a harmatpont
    közötti különbség (spread), annál nagyobb a köd/pára kockázata, és annál
    rosszabb a látótávolság. Csapadék esetén ezt tovább csökkentjük. */
-function estimateVisibility(temp, dewPoint, rainRate) {
-  const spread = Math.max(0, temp - dewPoint);
-
-  // Aszimptotikusan 20 km felé tartó becslés a harmatpont-spread alapján
-  let vis = 20 * (1 - Math.exp(-spread / 3));
-  vis = Math.max(0.1, Math.min(20, vis));
-
-  // Csapadék esetén tovább romlik a látótávolság
-  if (rainRate > 0) {
-    const rainVis = 20 / (1 + rainRate * 2);
-    vis = Math.min(vis, rainVis);
+/* ─── UPTIME BECSLÉSE (Deep Sleep esetén) ───
+   A mikrokontroller RTC memóriájában tárolt alvási ciklusok (bootCount / sleepCycles) 
+   alapján számolja ki az üzemidőt. 
+   Mivel az ESP32 kódjában az ébrenléti idő kompenzálva van, egy ciklus 
+   pontosan a WAKE_INTERVAL_SEC idejéig (alapértelmezetten 120 mp) tart. */
+function calculateUptime(cycles, cycleDurationSec = 120) {
+  if (!cycles) return "00h 00m";
+  
+  const totalSeconds = cycles * cycleDurationSec;
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  
+  // Vizuális formázás: Ha még nem ment egy napot, a napokat elrejtjük
+  if (days > 0) {
+    return `${days}d ${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m`;
   }
-
-  return vis;
+  return `${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m`;
 }
 
 /* ─── PREMIUM DATA UPDATE COMPONENT (Tiszta áttűnés másodlagos adatokhoz) ─── */
@@ -3889,8 +3893,7 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
                   {[
                     ['Alvó Ciklusok (Ma)', liveData.sleepCycles, th.a],
                     ['Deep Sleep Arány', `${liveData.deepSleep}%`, th.p],
-                    ['Uptime diagnosztika', '14d 07h 22m', th.t1], // Statikus marad
-                    ['Sikeres Adatcsomagok', liveData.packets.toLocaleString('hu-HU'), th.v],
+                    ['Uptime diagnosztika', calculateUptime(liveData.sleepCycles), th.t1], // Élő kalkuláció!                    ['Sikeres Adatcsomagok', liveData.packets.toLocaleString('hu-HU'), th.v],
                   ].map(([l, v, c]) => (
                     <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, ...ui, fontSize: 12.5 }}>
                       <span style={{ color: th.t2 }}>{l}</span>
