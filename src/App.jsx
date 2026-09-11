@@ -4007,7 +4007,7 @@ export default function App() {
           const alpha = (a * t) / (b + t) + Math.log(h / 100);
           const dewPoint = (b * alpha) / (a - alpha);
 
-          // Hőérzet (egyszerűsített: hidegben szélhideg, melegben csak a mért hő)
+          // Hőérzet (egyszerűsített)
           const feelsLike = (t <= 10 && data.wind_speed > 4.8)
             ? 13.12 + 0.6215 * t - 11.37 * Math.pow(data.wind_speed, 0.16) + 0.3965 * t * Math.pow(data.wind_speed, 0.16)
             : t;
@@ -4023,7 +4023,14 @@ export default function App() {
             uvIndex: data.uv !== undefined ? data.uv : prev.uvIndex,
             dewPoint: parseFloat(dewPoint.toFixed(1)),
             feelsLike: parseFloat(feelsLike.toFixed(1)),
-            battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery
+            battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery,
+
+            // ÚJ: rendszerdiagnosztikai mezők
+            wifi: data.wifi_signal !== undefined ? data.wifi_signal : prev.wifi,
+            internalTemp: data.internal_temp !== undefined ? data.internal_temp : prev.internalTemp,
+            packets: data.packets_sent !== undefined ? data.packets_sent : prev.packets,
+            sleepCycles: data.sleep_cycles !== undefined ? data.sleep_cycles : prev.sleepCycles,
+            deepSleep: data.deep_sleep_pct !== undefined ? data.deep_sleep_pct : prev.deepSleep
           }));
           if (data._time) setLastDataTimestamp(new Date(data._time).getTime());
         }
