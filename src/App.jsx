@@ -1507,8 +1507,8 @@ function TemperaturePage({ th, addToast }) {
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {rangeButtons.map(({ id, label }) => (
-                <button key={id} style={btnStyle(id)} onClick={() => handleRangeChange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
-                  {label}
+                <button key={id} style={btnStyle(id)} onClick={() => setRange(id)} onMouseEnter={() => setActiveBtn(id)} onMouseLeave={() => setActiveBtn(null)}>
+                    {label}
                 </button>
               ))}
             </div>
@@ -4020,6 +4020,7 @@ export default function App() {
     };
 
     fetchLatestData();
+    // const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
     const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
