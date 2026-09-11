@@ -4087,7 +4087,7 @@ export default function App() {
 
     fetchLatestData();
     // const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
-    const interval = setInterval(fetchLatestData, 15 * 60 * 1000);
+    const interval = setInterval(fetchLatestData, 30 * 1000);
     return () => clearInterval(interval);
   }, []);
 
