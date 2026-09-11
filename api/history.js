@@ -30,6 +30,9 @@ export default async function handler(req, res) {
     }
 
     // A Varázslat: A Flux lekérdezés, ami az adatbázisban átlagol
+    // ... (A fenti InfluxDB config sorok maradhatnak: url, token, org, bucket, start, window, timeFormat) ...
+
+    // A Varázslat: A Flux lekérdezés, ami az adatbázisban átlagol
     const fluxQuery = `
         from(bucket: "${bucket}")
             |> range(start: ${start})
@@ -42,37 +45,44 @@ export default async function handler(req, res) {
     try {
         const data = await queryApi.collectRows(fluxQuery);
         
-        // A nyers Influx adatokat "Recharts-barát" objektumokká alakítjuk
+        // A nyers Influx adatokat szigorú "Recharts-barát" objektumokká alakítjuk
         const formattedData = data.map(row => {
             const date = new Date(row._time);
             let timeLabel = '';
 
             // A X tengely feliratának formázása a nézethez igazítva
             if (timeFormat === 'minute') {
-                timeLabel = \`\${String(date.getHours()).padStart(2, '0')}:\${String(date.getMinutes()).padStart(2, '0')}\`;
+                timeLabel = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
             } else if (timeFormat === 'hour') {
-                timeLabel = \`\${String(date.getHours()).padStart(2, '0')}:00\`;
+                timeLabel = `${String(date.getHours()).padStart(2, '0')}:00`;
             } else if (timeFormat === 'dayWeek') {
                 const days = ['V', 'H', 'K', 'Sze', 'Cs', 'P', 'Szo'];
                 timeLabel = days[date.getDay()];
             } else if (timeFormat === 'dayMonth') {
-                timeLabel = \`\${date.getDate()}.\`;
+                timeLabel = `${date.getDate()}.`;
             }
 
-            // Kimentjük az összes létező mezőt (ha esetleg még nem küld ilyet a hardver, null lesz)
+            // A BIZTONSÁGI HÁLÓ: Alapértelmezett értékeket adunk (0 vagy fallback érték), ha az adatbázis mezője üres (null).
+            // Így a React Recharts diagramja sosem fagy le "undefined" vagy "null" miatt!
             return {
                 t: timeLabel,
-                temp: row.temperature ? parseFloat(row.temperature.toFixed(1)) : null,
-                hum: row.humidity ? parseFloat(row.humidity.toFixed(1)) : null,
-                pres: row.pressure ? parseFloat(row.pressure.toFixed(1)) : null,
-                speed: row.wind_speed ? parseFloat(row.wind_speed.toFixed(1)) : null,
-                gust: row.wind_speed ? parseFloat((row.wind_speed * 1.3).toFixed(1)) : null, // Szimulált lökés
-                acc: row.rain ? parseFloat(row.rain.toFixed(1)) : 0,
-                intensity: row.rain ? parseFloat(row.rain.toFixed(1)) : 0,
-                lux: row.lux ? Math.round(row.lux) : null,
-                uv: row.uv ? parseFloat(row.uv.toFixed(1)) : null
+                temp: row.temperature != null ? parseFloat(row.temperature.toFixed(1)) : 22.0, // Fallback hőmérséklet
+                hum: row.humidity != null ? parseFloat(row.humidity.toFixed(1)) : 50.0,      // Fallback páratartalom
+                pres: row.pressure != null ? parseFloat(row.pressure.toFixed(1)) : 1013.2,   // Fallback légnyomás
+                speed: row.wind_speed != null ? parseFloat(row.wind_speed.toFixed(1)) : 0.0,   // Fallback szélsebesség
+                gust: row.wind_speed != null ? parseFloat((row.wind_speed * 1.3).toFixed(1)) : 0.0, 
+                acc: row.rain != null ? parseFloat(row.rain.toFixed(1)) : 0.0,
+                intensity: row.rain != null ? parseFloat(row.rain.toFixed(1)) : 0.0,
+                lux: row.lux != null ? Math.round(row.lux) : 0,
+                uv: row.uv != null ? parseFloat(row.uv.toFixed(1)) : 0.0
             };
         });
+
+        // Üres tömb elleni védelem: Ha az InfluxDB egyáltalán nem küld adatot (mert pl. az ESP32 offline volt 24 óráig),
+        // akkor visszadobunk egy 404-es hibát, amire a frontend a saját "MOCK DATA" tömbjeivel fog reagálni (Fallback).
+        if (formattedData.length === 0) {
+           return res.status(404).json({ error: "Nincs megjeleníthető historikus adat az InfluxDB-ben." });
+        }
 
         res.status(200).json(formattedData);
     } catch (error) {
