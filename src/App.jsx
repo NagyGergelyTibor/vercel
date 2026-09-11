@@ -3999,17 +3999,33 @@ export default function App() {
         const data = await response.json();
         
         if (data.temperature !== undefined) {
+          const t = data.temperature;
+          const h = data.humidity;
+
+          // Harmatpont (Magnus-formula)
+          const a = 17.27, b = 237.7;
+          const alpha = (a * t) / (b + t) + Math.log(h / 100);
+          const dewPoint = (b * alpha) / (a - alpha);
+
+          // Hőérzet (egyszerűsített: hidegben szélhideg, melegben csak a mért hő)
+          const feelsLike = (t <= 10 && data.wind_speed > 4.8)
+            ? 13.12 + 0.6215 * t - 11.37 * Math.pow(data.wind_speed, 0.16) + 0.3965 * t * Math.pow(data.wind_speed, 0.16)
+            : t;
+
           setLiveData(prev => ({
             ...prev,
-            temp: data.temperature,
-            humidity: data.humidity,
-            pressure: data.pressure || prev.pressure, 
+            temp: t,
+            humidity: h,
+            pressure: data.pressure || prev.pressure,
             windSpeed: data.wind_speed !== undefined ? data.wind_speed : prev.windSpeed,
             windDir: data.wind_direction !== undefined ? data.wind_direction : prev.windDir,
             precipitation: data.rain !== undefined ? data.rain : prev.precipitation,
+            uvIndex: data.uv !== undefined ? data.uv : prev.uvIndex,
+            dewPoint: parseFloat(dewPoint.toFixed(1)),
+            feelsLike: parseFloat(feelsLike.toFixed(1)),
             battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery
           }));
-          if (data._time) setLastDataTimestamp(new Date(data._time).getTime()); 
+          if (data._time) setLastDataTimestamp(new Date(data._time).getTime());
         }
         setAppLoaded(true);
       } catch (error) {
