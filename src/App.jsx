@@ -20,8 +20,8 @@ const hourly = Array.from({ length: 24 }, (_, i) => ({
 }));
 
 const weekly = [
-  { d: 'Hét', mm: 0 }, { d: 'Ked', mm: 2.4 }, { d: 'Sze', mm: 8.7 },
-  { d: 'Csü', mm: 1.2 }, { d: 'Pén', mm: 0 }, { d: 'Szo', mm: 0.3 }, { d: 'Vas', mm: 5.1 }
+  { t: 'Hét', acc: 0 }, { t: 'Ked', acc: 2.4 }, { t: 'Sze', acc: 8.7 },
+  { t: 'Csü', acc: 1.2 }, { t: 'Pén', acc: 0 }, { t: 'Szo', acc: 0.3 }, { t: 'Vas', acc: 5.1 }
 ];
 
 /* ─────────────── TEMPERATURE PAGE MOCK DATA ─────────────── */
@@ -3853,10 +3853,10 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
               <ResponsiveContainer width='100%' height="100%">
                 <BarChart data={chartWeekly} margin={{ top: 4, right: 24, bottom: 0, left: -10 }}>
                   <CartesianGrid strokeDasharray='4' stroke={`${th.t2}15`} vertical={false} />
-                  <XAxis dataKey='d' tick={{ fontFamily: "'Inter',sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey='t' tick={{ fontFamily: "'Inter',sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} />
-                  {/* ÚJ: Folyadékszerűen növekvő oszlop animáció (1000ms ease-out) */}
-                  <Bar dataKey='mm' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" />
+                  
+                  <Bar dataKey='acc' fill={th.cB} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" />
                 </BarChart>
               </ResponsiveContainer>
             </SkeletonWrapper>
@@ -4091,24 +4091,33 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // ─── ÚJ: A 24 ÓRÁS GRAFIKON ADATAINAK LEKÉRÉSE AZ API-BÓL ───
+  // ─── ÚJ: A GRAFIKONOK (1 Nap és 1 Hét) ADATAINAK PÁRHUZAMOS LEKÉRÉSE ───
   useEffect(() => {
     const fetchHistoryData = async () => {
       try {
-        const response = await fetch('/api/history?range=1d');
-        if (!response.ok) throw new Error('API nem elérhető');
-        const data = await response.json();
+        // Promise.all: Egyszerre (párhuzamosan) indítjuk a két hálózati kérést, így kétszer olyan gyors!
+        const [resDaily, resWeekly] = await Promise.all([
+          fetch('/api/history?range=1d'),
+          fetch('/api/history?range=1w')
+        ]);
         
-        if (data && data.length > 0) {
-          setChartHourly(data); // Beletöltjük az InfluxDB-ből kapott 24 órás adatokat
+        if (!resDaily.ok || !resWeekly.ok) throw new Error('API nem elérhető');
+        
+        const dataDaily = await resDaily.json();
+        const dataWeekly = await resWeekly.json();
+        
+        if (dataDaily && dataDaily.length > 0) {
+          setChartHourly(dataDaily); // 24 Órás Hőmérséklet/Pára grafikon
+        }
+        if (dataWeekly && dataWeekly.length > 0) {
+          setChartWeekly(dataWeekly); // 7 Napos Csapadék grafikon
         }
       } catch (error) {
-        console.log("Lokális mód: 24 órás grafikon tesztadatokkal fut.");
+        console.log("Lokális mód: Grafikonok tesztadatokkal futnak.");
       }
     };
 
     fetchHistoryData();
-    // Ezt elég ritkábban (pl. 15 percenként) frissíteni, mert historikus adat
     const interval = setInterval(fetchHistoryData, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -4385,10 +4394,9 @@ export default function App() {
               if (precipSpike > 0) {
                 setChartWeekly(prevChart => {
                   const newChart = [...prevChart];
-                  // A legutolsó (Vasárnapi) oszlophoz folyamatosan hozzáadjuk a leesett esőt
                   newChart[newChart.length - 1] = {
                     ...newChart[newChart.length - 1],
-                    mm: parseFloat((newChart[newChart.length - 1].mm + precipSpike).toFixed(1))
+                    acc: parseFloat((newChart[newChart.length - 1].acc + precipSpike).toFixed(1))
                   };
                   return newChart;
                 });
