@@ -3551,8 +3551,18 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
     return () => clearTimeout(t);
   }, []);
 
-  // Kiszámoljuk a csúszka aktuális pozícióját százalékban
-  const tempPct = Math.max(0, Math.min(100, ((liveData.temp - R.tempMin) / (R.tempMax - R.tempMin)) * 100));
+  // --- ÚJ: MIN/MAX SZÁMÍTÁS A 24 ÓRÁS ADATOKBÓL ---
+  // Kinyerjük a hőmérsékleteket a grafikon tömbjéből (csak a valós értékeket)
+  const hourlyTemps = chartHourly.map(d => d.t).filter(t => t != null);
+  
+  // Hozzávesszük a jelenlegi élő adatot is, hogy a legfrissebb mérés azonnal érvényesüljön
+  const tempMin = Math.min(...hourlyTemps, liveData.temp);
+  const tempMax = Math.max(...hourlyTemps, liveData.temp);
+
+  // Kiszámoljuk a csúszka aktuális pozícióját százalékban az új Min/Max alapján
+  // (A tempMin === tempMax védelem megelőzi a nullával való osztást, ha esetleg minden adat azonos)
+  const tempPct = tempMin === tempMax ? 50 : Math.max(0, Math.min(100, ((liveData.temp - tempMin) / (tempMax - tempMin)) * 100));
+  
   // Ha az oldal még nem úszott be, 0-n tartjuk a golyót az animáció kedvéért
   const activeRangeW = show ? tempPct : 0;
 
@@ -3654,8 +3664,8 @@ function DashboardContent({ phase, th, isRaining, isWindy, setCurrentPage, appLo
               </div>
               <div style={{ marginTop: 24 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, ...ui, fontSize: 11, color: th.t2 }}>
-                  <span>Min {R.tempMin}°C</span>
-                  <span>Max {R.tempMax}°C</span>
+                  <span>Min {tempMin.toFixed(1)}°C</span>
+                  <span>Max {tempMax.toFixed(1)}°C</span>
                 </div>
                 <div style={{ height: 6, background: 'rgba(128,128,128,0.10)', borderRadius: 99, position: 'relative' }}>
                   {/* 1. Folyadék vonal GPU gyorsítással (scaleX) */}
