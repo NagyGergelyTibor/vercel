@@ -4090,8 +4090,8 @@ export default function App() {
         const data = await response.json();
         
         if (data.temperature !== undefined) {
-          const t = data.temperature;
-          const h = data.humidity;
+          const t = Number(data.temperature);
+          const h = Number(data.humidity);
 
           // Harmatpont (Magnus-formula)
           const a = 17.27, b = 237.7;
@@ -4105,25 +4105,24 @@ export default function App() {
 
           setLiveData(prev => ({
             ...prev,
-            temp: t ?? prev.temp,
-            humidity: h ?? prev.humidity,
-            pressure: data.pressure ?? prev.pressure,
-            windSpeed: data.wind_speed ?? prev.windSpeed,
-            windDir: data.wind_direction ?? prev.windDir,
-            precipitation: data.rain ?? prev.precipitation,
-            uvIndex: data.uv ?? prev.uvIndex,
-            lux: data.lux ?? prev.lux,   // ← EZT ADD HOZZÁ
+            temp: t !== undefined ? Number(t) : prev.temp,
+            humidity: h !== undefined ? Number(h) : prev.humidity,
+            pressure: data.pressure !== undefined ? Number(data.pressure) : prev.pressure,
+            windSpeed: data.wind_speed !== undefined ? Number(data.wind_speed) : prev.windSpeed,
+            windDir: data.wind_direction !== undefined ? Number(data.wind_direction) : prev.windDir,
+            precipitation: data.rain !== undefined ? Number(data.rain) : prev.precipitation,
+            uvIndex: data.uv !== undefined ? Number(data.uv) : prev.uvIndex,
+            lux: data.lux !== undefined ? Number(data.lux) : prev.lux,
             dewPoint: parseFloat((dewPoint || 0).toFixed(1)),
             feelsLike: parseFloat((feelsLike || 0).toFixed(1)),
             visibility: parseFloat(estimateVisibility(t || 0, dewPoint || 0, data.rain || 0).toFixed(1)),
-            battery: data.battery_voltage ? Math.min(100, Math.round((data.battery_voltage / 4.2) * 100)) : prev.battery,
-            
-            // BIZTONSÁGI HÁLÓ: A '??' megakadályozza, hogy null érték írja felül a számokat!
-            wifi: data.wifi_signal ?? prev.wifi,
-            internalTemp: data.internal_temp ?? prev.internalTemp,
-            packets: data.packets_sent ?? prev.packets,
-            sleepCycles: data.sleep_cycles ?? prev.sleepCycles,
-            deepSleep: data.deep_sleep_pct ?? prev.deepSleep
+            battery: data.battery_voltage ? Math.min(100, Math.round((Number(data.battery_voltage) / 4.2) * 100)) : prev.battery,
+
+            wifi: data.wifi_signal !== undefined ? Number(data.wifi_signal) : prev.wifi,
+            internalTemp: data.internal_temp !== undefined ? Number(data.internal_temp) : prev.internalTemp,
+            packets: data.packets_sent !== undefined ? Number(data.packets_sent) : prev.packets,
+            sleepCycles: data.sleep_cycles !== undefined ? Number(data.sleep_cycles) : prev.sleepCycles,
+            deepSleep: data.deep_sleep_pct !== undefined ? Number(data.deep_sleep_pct) : prev.deepSleep
           }));
           if (data._time) setLastDataTimestamp(new Date(data._time).getTime());
         }
