@@ -4346,8 +4346,9 @@ export default function App() {
       document.head.appendChild(link);
     }
     
-    link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="80">${iconEmoji}</text></svg>`;
-    
+    // JAVÍTVA: viewBox="0 0 120 120" -> 20%-kal nagyobb a vászon, így az emoji garantáltan nem lóg ki a széleken!
+    link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><text x="50%" y="55%" dominant-baseline="central" text-anchor="middle" font-size="80">${iconEmoji}</text></svg>`;
+
   }, [liveData.temp, liveData.precipitation]);
 
   return (
