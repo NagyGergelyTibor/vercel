@@ -4340,15 +4340,15 @@ export default function App() {
     if (isOffline) {
       activeData = 'Offline';
     } else {
-      switch (currentPage) {
-        case 'humidity':      activeData = `${liveData.humidity}%`; break;
-        case 'pressure':      activeData = `${Math.round(liveData.pressure)} hPa`; break;
-        case 'wind':          activeData = `${liveData.windSpeed.toFixed(1)} km/h`; break;
-        case 'precipitation': activeData = `${liveData.precipitation.toFixed(1)} mm`; break;
-        case 'brightness': return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} liveData={liveData} />;
-        default:              activeData = `${liveData.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
-      }
-    }
+          switch (currentPage) {
+            case 'humidity':      activeData = `${liveData.humidity}%`; break;
+            case 'pressure':      activeData = `${Math.round(liveData.pressure)} hPa`; break;
+            case 'wind':          activeData = `${liveData.windSpeed.toFixed(1)} km/h`; break;
+            case 'precipitation': activeData = `${liveData.precipitation.toFixed(1)} mm`; break;
+            case 'brightness':    activeData = `${liveData.uvIndex.toFixed(1)} UVI`; break;
+            default:              activeData = `${liveData.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
+          }
+        }
 
     // Címsor beállítása
     document.title = `${activeData} · ${pageLabels[currentPage]} · METEO`;
