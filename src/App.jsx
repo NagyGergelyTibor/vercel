@@ -4324,7 +4324,31 @@ export default function App() {
     }  };
   // ─────────────────────────────────────────────────────────────
 
-  
+  // ─── ÚJ: ÉLŐ BÖNGÉSZŐFÜL (TITLE ÉS FAVICON) ───
+  useEffect(() => {
+    if (liveData.temp === undefined) return;
+
+    const hour = new Date().getHours();
+    const isDay = hour >= 6 && hour < 20;
+    const isRaining = liveData.precipitation > 0;
+    
+    let iconEmoji = isDay ? "☀️" : "🌙";
+    if (isRaining) iconEmoji = "🌧️";
+
+    // 1. JAVÍTVA: Kivettük az emojit a szövegből, csak a hőmérséklet maradt
+    document.title = `${liveData.temp}°C | Időjárás`;
+
+    // 2. JAVÍTVA: Középre zárt SVG (x="50%", y="50%", text-anchor) és kisebb méret (font-size="80")
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    
+    link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="80">${iconEmoji}</text></svg>`;
+    
+  }, [liveData.temp, liveData.precipitation]);
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', color: th.t1, fontFamily: "'Inter', sans-serif", transition: 'color 1.5s ease' }}>
