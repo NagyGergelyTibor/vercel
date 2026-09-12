@@ -1746,7 +1746,7 @@ const humData1mo = Array.from({ length: 30 }, (_, i) => ({ t: `${i+1}.`, hum: Ma
 const HUMIDITY_DATASETS = { '1h': humData1h, '1d': humData1d, '1w': humData1w, '1mo': humData1mo };
 
 /* ═══════════════ HUMIDITY PAGE ═══════════════ */
-function HumidityPage({ th, addToast }) {
+function HumidityPage({ th, addToast, liveData }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -1784,8 +1784,8 @@ function HumidityPage({ th, addToast }) {
 
   /* Komfortindex logika */
   let comfortLabel, comfortColor;
-  if (currentH < 30) { comfortLabel = 'Túl száraz'; comfortColor = '#EA580C'; }
-  else if (currentH <= 60) { comfortLabel = 'Ideális'; comfortColor = '#10B981'; }
+  if (liveData.humidity < 30) { comfortLabel = 'Túl száraz'; comfortColor = '#EA580C'; }
+  else if (liveData.humidity <= 60) { comfortLabel = 'Ideális'; comfortColor = '#10B981'; }
   else { comfortLabel = 'Fülledt / Magas'; comfortColor = '#0284C7'; }
 
   const rangeButtons = [
@@ -1870,7 +1870,7 @@ function HumidityPage({ th, addToast }) {
             <div>
               <Lbl t={th}>Páratartalom Idősora</Lbl>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.p, letterSpacing: '-0.03em', lineHeight: 1 }}>{currentH}</span>
+                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.p, letterSpacing: '-0.03em', lineHeight: 1 }}>{liveData.humidity}</span>
                 <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>%</span>
                 <span style={{ ...ui, fontSize: 12, color: trendColor, fontWeight: 600, marginLeft: 4 }}>
                   {trendArrow} {trendLabel}
@@ -1984,7 +1984,7 @@ function HumidityPage({ th, addToast }) {
                 { label: 'Minimum (Időszak)', value: `${minH}%`, color: th.t1, icon: '▼' },
                 { label: 'Maximum (Időszak)', value: `${maxH}%`, color: th.t1, icon: '▲' },
                 { label: 'Komfortérzet', value: comfortLabel, color: comfortColor, icon: '☺' },
-                { label: 'Harmatpont', value: `${R.dewPoint}°C`, color: th.p, icon: '💧' },
+                { label: 'Harmatpont', value: `${liveData.dewPoint}°C`, color: th.p, icon: '💧' },
               ].map(({ label, value, color, icon }, i, arr) => (
                 <div key={label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -2003,7 +2003,7 @@ function HumidityPage({ th, addToast }) {
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 11, color: th.t3, marginBottom: 6 }}>
               <span>0% (Száraz)</span>
-              <span style={{ color: th.t2 }}>Jelenlegi: {currentH}%</span>
+              <span style={{ color: th.t2 }}>Jelenlegi: {liveData.humidity}%</span>
               <span>100% (Nedves)</span>
             </div>
             <div style={{ height: 6, background: `${th.t3}30`, borderRadius: 99, position: 'relative', overflow: 'visible' }}>
@@ -2011,13 +2011,13 @@ function HumidityPage({ th, addToast }) {
                 position: 'absolute', left: 0, top: 0, height: '100%', width: '100%', borderRadius: 99,
                 background: `linear-gradient(90deg, #F59E0B, #10B981, #0284C7)`,
                 transformOrigin: 'left',
-                transform: `scaleX(${Math.max(0, Math.min(100, currentH)) / 100})`,
+                transform: `scaleX(${Math.max(0, Math.min(100, liveData.humidity)) / 100})`,
                 transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
                 willChange: 'transform'
               }} />
               <div style={{
                 position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
-                transform: `translateX(${Math.max(0, Math.min(100, currentH))}%)`,
+                transform: `translateX(${Math.max(0, Math.min(100, liveData.humidity))}%)`,
                 transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
                 willChange: 'transform'
               }}>
@@ -4315,7 +4315,7 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'temperature':   return <TemperaturePage th={th} addToast={addToast} liveData={liveData} />;
-      case 'humidity':      return <HumidityPage th={th} addToast={addToast} />;
+      case 'humidity': return <HumidityPage th={th} addToast={addToast} liveData={liveData} />;
       case 'pressure':      return <PressurePage th={th} addToast={addToast} />;
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
       case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} />;
