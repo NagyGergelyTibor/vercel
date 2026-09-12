@@ -2506,6 +2506,8 @@ function BrightnessPage({ th, addToast, liveData }) {
   /* ─── FÉNYERŐ, ÉGBOLT ÉS FELHŐZET LOGIKA ─── */
   const now = new Date();
   const currentHourDecimal = now.getHours() + now.getMinutes() / 60;
+  const { sunrise: sunriseTime, sunset: sunsetTime } = getSunTimes(new Date()); // ← IDE KERÜLT FEL
+
   
   const dayLength = sunsetTime - sunriseTime;
   const expectedMaxLux = Math.max(0, Math.sin(((currentHourDecimal - sunriseTime) / dayLength) * Math.PI) * 100000);
@@ -2525,8 +2527,6 @@ function BrightnessPage({ th, addToast, liveData }) {
   }
 
   /* ─── 🌟 DINAMIKUS ÉJSZAKAI / NAPPALI ÍV MATEMATIKA ─── */
-  const { sunrise: sunriseTime, sunset: sunsetTime } = getSunTimes(new Date());
-  
   const isDay = currentHourDecimal >= sunriseTime && currentHourDecimal < sunsetTime;
   
   let progress, leftLabel, rightLabel, leftSub, rightSub, bodyColor, glowColor;
