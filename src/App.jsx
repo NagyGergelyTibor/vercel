@@ -2948,7 +2948,7 @@ const genRainData = () => {
 const RAIN_DATASETS = genRainData();
 
 /* ═══════════════ PRECIPITATION PAGE (CSAPADÉK) ═══════════════ */
-function PrecipitationPage({ th, addToast, liveData }) {
+function PrecipitationPage({ th, addToast, liveData, chartWeekly }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1w'); // Alapértelmezetten 1 hét, hogy lássunk is esőt
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2990,16 +2990,21 @@ function PrecipitationPage({ th, addToast, liveData }) {
     if (i === 0) daysSinceRain = `Több mint 1 ${displayRange === '1w' ? 'hete' : 'hónapja'}`;
   }
 
-  /* ─── VÍZGAZDÁLKODÁS ÉS ÖNTÖZÉS LOGIKA (DINAMIKUS) ─── */
-  const referenceValues = { '1h': 0.1, '1d': 1.5, '1w': 10.5, '1mo': 45.0 };
-  const currentRef = referenceValues[displayRange] || 25.0;
+  /* ─── VÍZGAZDÁLKODÁS ÉS ÖNTÖZÉS LOGIKA (DINAMIKUS ÉS OKOS) ─── */
+  const needsWeeklyOverride = displayRange === '1h' || displayRange === '1d';
+  
+  const irrigationTotal = needsWeeklyOverride 
+    ? (chartWeekly || []).reduce((sum, item) => sum + (item.acc || 0), 0) 
+    : totalAcc;
+
+  const currentRef = displayRange === '1mo' ? 45.0 : 10.5;
 
   let irrigationAdvice;
-  if (totalAcc === 0) {
+  if (irrigationTotal === 0) {
     irrigationAdvice = 'Kritikusan száraz. Öntözés kötelező!';
-  } else if (totalAcc < currentRef * 0.4) {
+  } else if (irrigationTotal < currentRef * 0.4) {
     irrigationAdvice = 'Száraz talaj. Öntözés javasolt.';
-  } else if (totalAcc < currentRef * 1.2) {
+  } else if (irrigationTotal < currentRef * 1.2) {
     irrigationAdvice = 'Optimális talajnedvesség.';
   } else {
     irrigationAdvice = 'Telített talaj. Öntözés nem szükséges.';
@@ -3234,21 +3239,23 @@ function PrecipitationPage({ th, addToast, liveData }) {
                 {/* Folyadék Animáció */}
                 <div style={{ 
                   position: 'absolute', bottom: 0, left: 0, right: 0, 
-                  height: `${Math.min(100, (totalAcc / Math.max(1, currentRef * 1.5)) * 100)}%`, // A henger az elvárt referencia 150%-ánál telik meg
+                  height: `${Math.min(100, (irrigationTotal / Math.max(1, currentRef * 1.5)) * 100)}%`, 
                   background: 'linear-gradient(180deg, #38BDF8 0%, #0284C7 100%)',
                   transition: 'height 1.5s cubic-bezier(0.16, 1, 0.3, 1)',
-                  opacity: totalAcc > 0 ? 0.9 : 0
+                  opacity: irrigationTotal > 0 ? 0.9 : 0
                 }}>
                   {/* Kis hullám effekt a tetején */}
-                  {totalAcc > 0 && <div style={{ position: 'absolute', top: -2, left: 0, right: 0, height: 4, background: '#fff', opacity: 0.3, borderRadius: '50%' }} />}
+                  {irrigationTotal > 0 && <div style={{ position: 'absolute', top: -2, left: 0, right: 0, height: 4, background: '#fff', opacity: 0.3, borderRadius: '50%' }} />}
                 </div>
               </div>
 
               {/* Szöveges adatok a henger mellett */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
-                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>Időszaki Összeg</div>
-                  <div style={{ ...tech, fontSize: 24, fontWeight: 700, color: '#3B82F6', lineHeight: 1 }}>{totalAcc.toFixed(1)} <span style={{ ...ui, fontSize: 12, fontWeight: 500, color: th.t2 }}>mm</span></div>
+                  <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>
+                    {displayRange === '1mo' ? 'Havi Összeg' : (needsWeeklyOverride ? 'Heti Összeg (Öntözéshez)' : 'Heti Összeg')}
+                  </div>
+                  <div style={{ ...tech, fontSize: 24, fontWeight: 700, color: '#3B82F6', lineHeight: 1 }}>{irrigationTotal.toFixed(1)} <span style={{ ...ui, fontSize: 12, fontWeight: 500, color: th.t2 }}>mm</span></div>
                 </div>
                 <div>
                   <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>Referencia (Átlag)</div>
@@ -4406,7 +4413,7 @@ export default function App() {
       case 'humidity': return <HumidityPage th={th} addToast={addToast} liveData={liveData} />;
       case 'pressure': return <PressurePage th={th} addToast={addToast} liveData={liveData} />;
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
-      case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} liveData={liveData} />;
+      case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} liveData={liveData} chartWeekly={chartWeekly} />;
       case 'wind':          return <WindPage th={th} addToast={addToast} liveData={liveData} />;
       default: return <DashboardContent phase={phase} th={th} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveData={liveData} chartHourly={chartHourly} chartWeekly={chartWeekly} />;
     }  };
