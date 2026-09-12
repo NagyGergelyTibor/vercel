@@ -3369,7 +3369,43 @@ function WindPage({ th, addToast, liveData}) {
   const avgSpeed = parseFloat((speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1));
 
   const bf = getBeaufort(currentSpeed);
-  const dominantRose = ROSE_DATA.reduce((a, b) => (b.pct > a.pct ? b : a), ROSE_DATA[0]);
+
+  // ─── ÚJ: DINAMIKUS SZÉLRÓZSA SZÁMÍTÁS AZ AKTUÁLIS IDŐABLAK ALAPJÁN ───
+  const dynamicRoseData = useMemo(() => {
+    const DIRS = ['É', 'ÉK', 'K', 'DK', 'D', 'DNY', 'NY', 'ÉNY'];
+    if (!data || data.length === 0) return DIRS.map(dir => ({ dir, pct: 0 }));
+
+    let validCount = 0;
+    const counts = new Array(8).fill(0);
+
+    data.forEach(d => {
+      // Rugalmasan keresjük a szélirány kulcsot (attól függően, hogy a Vercel backend hogy küldi)
+      const deg = d.windDir ?? d.wind_direction ?? d.dir;
+      if (deg !== undefined && deg !== null) {
+        // A 360 fokot besoroljuk a 8 fő égtáj (45 fokos) "vödrébe"
+        const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+        counts[idx]++;
+        validCount++;
+      }
+    });
+
+    // Biztonsági háló: Ha az API history (még) nem adná vissza a szélirányt, 
+    // akkor átmenetileg az élő, pillanatnyi adattal tartjuk életben a grafikont
+    if (validCount === 0) {
+       const liveIdx = Math.round(((liveData.windDir % 360) + 360) % 360 / 45) % 8;
+       return DIRS.map((dir, i) => ({ dir, pct: i === liveIdx ? 100 : 0 }));
+    }
+
+    // Százalékos eloszlás kiszámítása
+    return DIRS.map((dir, i) => ({
+      dir,
+      pct: parseFloat(((counts[i] / validCount) * 100).toFixed(1))
+    }));
+  }, [data, liveData.windDir]);
+
+  // A legnagyobb százalékú égtáj (domináns szél) kiválasztása
+  const dominantRose = dynamicRoseData.reduce((a, b) => (b.pct > a.pct ? b : a), dynamicRoseData[0]);
+  
   const windLabel = getWindLabel(liveData.windDir);
 
   /* ─── TENDENCIA LOGIKA ─── */
@@ -3528,13 +3564,13 @@ function WindPage({ th, addToast, liveData}) {
           <Lbl t={th}>Szélirány-eloszlás (Szélrózsa)</Lbl>
           <div style={{ flex: 1, width: '100%', minHeight: 240, marginTop: 8, position: 'relative', ...fadeStyle }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={ROSE_DATA} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <BarChart data={dynamicRoseData} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
                 <CartesianGrid strokeDasharray="4" stroke={`${th.t2}15`} vertical={false} />
                 <XAxis dataKey="dir" tick={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fill: th.t2, fontWeight: 500 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fill: th.t2 }} axisLine={false} tickLine={false} unit="%" />
                 <Tooltip content={<RoseTip />} cursor={{ fill: `${th.a}10` }} />
                 <Bar dataKey="pct" radius={[4, 4, 0, 0]} maxBarSize={42} animationDuration={600} animationEasing="ease-in-out">
-                  {ROSE_DATA.map((d, i) => (
+                  {dynamicRoseData.map((d, i) => (
                     <Cell key={i} fill={d.dir === dominantRose.dir ? th.a : `${th.a}40`} />
                   ))}
                 </Bar>
