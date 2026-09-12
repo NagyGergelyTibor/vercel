@@ -9,7 +9,7 @@ const R = {
   temp: 22.4, feelsLike: 21.1, dewPoint: 15.8,
   humidity: 67, pressure: 1013.2,
   windSpeed: 14.3, windDir: 225,
-  uvIndex: 4, visibility: 9.4, precipitation: 0,
+  uvIndex: 4, lux: 0, visibility: 9.4, precipitation: 0,
   tempMin: 14.2, tempMax: 26.8,
 };
 
@@ -1380,6 +1380,49 @@ function FormatPill({ exportFormat, setExportFormat, th, isFetching = false }) {
 }
 
 
+/* ─── VALÓS NAPKELTE/NAPNYUGTA SZÁMÍTÁS (NOAA-képlet, Debrecen koordinátáira) ───
+   Nincs szükség külső API-ra: a dátumból és a helyi koordinátákból pontosan
+   (kb. 1-2 percen belüli eltéréssel) kiszámolja a nap kelését és nyugvását. */
+const DEBRECEN_LAT = 47.53;
+const DEBRECEN_LON = 21.63;
+
+function getSunTimes(date, lat = DEBRECEN_LAT, lon = DEBRECEN_LON) {
+  const rad = Math.PI / 180;
+  const startOfYear = new Date(date.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((date - startOfYear) / 86400000);
+
+  const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + (date.getHours() - 12) / 24);
+
+  const eqTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma)
+    - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma));
+
+  const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma)
+    - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma)
+    - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+
+  const latRad = lat * rad;
+  const zenith = 90.833 * rad; // hivatalos napkelte/napnyugta zenitszög (légköri fénytörés + napkorong mérete)
+
+  const cosHA = (Math.cos(zenith) / (Math.cos(latRad) * Math.cos(decl))) - Math.tan(latRad) * Math.tan(decl);
+  const clampedCosHA = Math.max(-1, Math.min(1, cosHA)); // védelem sarkköri szélsőségek ellen (nálunk nem fordul elő)
+  const haDeg = Math.acos(clampedCosHA) / rad;
+
+  const sunriseUTC = 720 - 4 * (lon + haDeg) - eqTime;
+  const sunsetUTC  = 720 - 4 * (lon - haDeg) - eqTime;
+
+  const tzOffsetMin = -date.getTimezoneOffset(); // a böngésző kezeli a nyári időszámítást is
+
+  return {
+    sunrise: (sunriseUTC + tzOffsetMin) / 60, // tizedes óra, pl. 5.7 = 05:42
+    sunset: (sunsetUTC + tzOffsetMin) / 60,
+  };
+}
+
+function formatDecimalHour(decHour) {
+  const h = Math.floor(decHour);
+  const m = Math.round((decHour - h) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 
 /* ═══════════════ SENSOR LAYOUT (DRY ARCHITEKTÚRA) ═══════════════ */
@@ -2412,7 +2455,7 @@ const getUvInfo = (val) => {
 };
 
 /* ═══════════════ BRIGHTNESS & UV PAGE (GÖRGETŐS NÉZET + DINAMIKUS ÉGI ÍV) ═══════════════ */
-function BrightnessPage({ th, addToast }) {
+function BrightnessPage({ th, addToast, liveData }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2464,7 +2507,8 @@ function BrightnessPage({ th, addToast }) {
   const now = new Date();
   const currentHourDecimal = now.getHours() + now.getMinutes() / 60;
   
-  const expectedMaxLux = Math.max(0, Math.sin(((currentHourDecimal - 5) / 14) * Math.PI) * 100000); 
+  const dayLength = sunsetTime - sunriseTime;
+  const expectedMaxLux = Math.max(0, Math.sin(((currentHourDecimal - sunriseTime) / dayLength) * Math.PI) * 100000);
   
   let skyCondition, skyIcon, cloudCoverPct;
   if (expectedMaxLux < 1000) {
@@ -2481,8 +2525,7 @@ function BrightnessPage({ th, addToast }) {
   }
 
   /* ─── 🌟 DINAMIKUS ÉJSZAKAI / NAPPALI ÍV MATEMATIKA ─── */
-  const sunriseTime = 5.7; // 05:42
-  const sunsetTime = 20.25; // 20:15
+  const { sunrise: sunriseTime, sunset: sunsetTime } = getSunTimes(new Date());
   
   const isDay = currentHourDecimal >= sunriseTime && currentHourDecimal < sunsetTime;
   
@@ -2491,7 +2534,7 @@ function BrightnessPage({ th, addToast }) {
   if (isDay) {
     // Nappali mód
     progress = (currentHourDecimal - sunriseTime) / (sunsetTime - sunriseTime);
-    leftLabel = "05:42"; rightLabel = "20:15";
+    leftLabel = formatDecimalHour(sunriseTime); rightLabel = formatDecimalHour(sunsetTime);
     leftSub = "Napkelte"; rightSub = "Napnyugta";
     
     // Golden hour színezés
@@ -2506,7 +2549,7 @@ function BrightnessPage({ th, addToast }) {
       : (24 - sunsetTime) + currentHourDecimal;
     progress = elapsedNight / nightDuration;
     
-    leftLabel = "20:15"; rightLabel = "05:42";
+    leftLabel = formatDecimalHour(sunsetTime); rightLabel = formatDecimalHour(sunriseTime);
     leftSub = "Napnyugta"; rightSub = "Napkelte";
     
     // Éjszakai Hold színek
@@ -4019,6 +4062,7 @@ export default function App() {
     pressure: R.pressure,
     windSpeed: R.windSpeed,
     uvIndex: R.uvIndex,
+    lux: R.lux,
     windDir: R.windDir,
     feelsLike: R.feelsLike,
     dewPoint: R.dewPoint,
@@ -4068,6 +4112,7 @@ export default function App() {
             windDir: data.wind_direction ?? prev.windDir,
             precipitation: data.rain ?? prev.precipitation,
             uvIndex: data.uv ?? prev.uvIndex,
+            lux: data.lux ?? prev.lux,   // ← EZT ADD HOZZÁ
             dewPoint: parseFloat((dewPoint || 0).toFixed(1)),
             feelsLike: parseFloat((feelsLike || 0).toFixed(1)),
             visibility: parseFloat(estimateVisibility(t || 0, dewPoint || 0, data.rain || 0).toFixed(1)),
@@ -4301,7 +4346,7 @@ export default function App() {
         case 'pressure':      activeData = `${Math.round(liveData.pressure)} hPa`; break;
         case 'wind':          activeData = `${liveData.windSpeed.toFixed(1)} km/h`; break;
         case 'precipitation': activeData = `${liveData.precipitation.toFixed(1)} mm`; break;
-        case 'brightness':    activeData = `${liveData.uvIndex} UVI`; break;
+        case 'brightness': return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} liveData={liveData} />;
         default:              activeData = `${liveData.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
       }
     }
