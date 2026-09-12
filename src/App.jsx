@@ -2043,7 +2043,7 @@ const presData1mo = Array.from({ length: 30 }, (_, i) => ({ t: `${i+1}.`, pres: 
 const PRESSURE_DATASETS = { '1h': presData1h, '1d': presData1d, '1w': presData1w, '1mo': presData1mo };
 
 /* ═══════════════ PRESSURE PAGE ═══════════════ */
-function PressurePage({ th, addToast }) {
+function PressurePage({ th, addToast, liveData }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2081,8 +2081,8 @@ function PressurePage({ th, addToast }) {
 
   /* Időjárási helyzet (Ciklon/Anticiklon) */
   let weatherPrediction, weatherIcon, weatherColor;
-  if (currentP > 1020) { weatherPrediction = 'Anticiklon (Tiszta)'; weatherIcon = '☀'; weatherColor = '#FBBF24'; }
-  else if (currentP >= 1005) { weatherPrediction = 'Változó'; weatherIcon = '⛅'; weatherColor = th.t1; }
+  if (liveData.pressure > 1020) { weatherPrediction = 'Anticiklon (Tiszta)'; weatherIcon = '☀'; weatherColor = '#FBBF24'; }
+  else if (liveData.pressure >= 1005) { weatherPrediction = 'Változó'; weatherIcon = '⛅'; weatherColor = th.t1; }
   else { weatherPrediction = 'Ciklon (Csapadékos)'; weatherIcon = '🌧'; weatherColor = '#0EA5E9'; }
 
   const rangeButtons = [
@@ -2166,7 +2166,7 @@ function PressurePage({ th, addToast }) {
             <div>
               <Lbl t={th}>Barometrikus Idősor</Lbl>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.v, letterSpacing: '-0.03em', lineHeight: 1 }}>{currentP}</span>
+                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.v, letterSpacing: '-0.03em', lineHeight: 1 }}>{liveData.pressure.toFixed(1)}</span>
                 <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>hPa</span>
                 <span style={{ ...ui, fontSize: 12, color: trendColor, fontWeight: 600, marginLeft: 4 }}>
                   {trendArrow} {trendLabel}
@@ -2298,7 +2298,7 @@ function PressurePage({ th, addToast }) {
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${th.border}`, ...cardFadeStyle }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', ...ui, fontSize: 11, color: th.t3, marginBottom: 6 }}>
               <span>Ciklon (990)</span>
-              <span style={{ color: th.t2 }}>Jelenlegi: {currentP}</span>
+              <span style={{ color: th.t2 }}>Jelenlegi: {liveData.pressure.toFixed(1)}</span>
               <span>Anticiklon (1030)</span>
             </div>
             <div style={{ height: 6, background: `${th.t3}30`, borderRadius: 99, position: 'relative', overflow: 'visible' }}>
@@ -2306,13 +2306,13 @@ function PressurePage({ th, addToast }) {
                 position: 'absolute', left: 0, top: 0, height: '100%', width: '100%', borderRadius: 99,
                 background: `linear-gradient(90deg, #0EA5E9, #10B981, #FBBF24)`,
                 transformOrigin: 'left',
-                transform: `scaleX(${Math.max(0, Math.min(100, ((currentP - 990) / (1030 - 990)) * 100)) / 100})`,
+                transform: `scaleX(${Math.max(0, Math.min(100, ((liveData.pressure - 990) / (1030 - 990)) * 100)) / 100})`,
                 transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
                 willChange: 'transform'
               }} />
               <div style={{
                 position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
-                transform: `translateX(${Math.max(0, Math.min(100, ((currentP - 990) / (1030 - 990)) * 100))}%)`,
+                transform: `translateX(${Math.max(0, Math.min(100, ((liveData.pressure - 990) / (1030 - 990)) * 100))}%)`,
                 transition: 'transform 1.4s cubic-bezier(0.16,1,0.3,1) .4s',
                 willChange: 'transform'
               }}>
@@ -4316,7 +4316,7 @@ export default function App() {
     switch (currentPage) {
       case 'temperature':   return <TemperaturePage th={th} addToast={addToast} liveData={liveData} />;
       case 'humidity': return <HumidityPage th={th} addToast={addToast} liveData={liveData} />;
-      case 'pressure':      return <PressurePage th={th} addToast={addToast} />;
+      case 'pressure': return <PressurePage th={th} addToast={addToast} liveData={liveData} />;
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
       case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} />;
       case 'wind':          return <WindPage th={th} addToast={addToast} />;
