@@ -4275,7 +4275,7 @@ export default function App() {
     }
 
     // SVG generálás és beillesztés (középre igazítva, hogy ne vágódjon le a szél)
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="105">${currentIcon}</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="100">${currentIcon}</text></svg>`;
     let link = document.querySelector("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
