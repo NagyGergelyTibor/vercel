@@ -4324,6 +4324,33 @@ export default function App() {
     }  };
   // ─────────────────────────────────────────────────────────────
 
+  // ─── ÚJ: ÉLŐ BÖNGÉSZŐFÜL (TITLE ÉS FAVICON) ───
+  useEffect(() => {
+    if (liveData.temp === undefined) return;
+
+    // 1. Határozzuk meg a megfelelő ikont a napszak és csapadék alapján
+    const hour = new Date().getHours();
+    const isDay = hour >= 6 && hour < 20;
+    const isRaining = liveData.precipitation > 0;
+    
+    let iconEmoji = isDay ? "☀️" : "🌙";
+    if (isRaining) iconEmoji = "🌧️";
+
+    // 2. Fül címének frissítése (pl: "☀️ 15.2°C | Időjárás")
+    document.title = `${iconEmoji} ${liveData.temp}°C | Időjárás`;
+
+    // 3. Favicon (a kis ikon a fülön) élő cseréje egy generált SVG képre
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    // Emojit alakítunk át szabványos webes ikonná
+    link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${iconEmoji}</text></svg>`;
+    
+  }, [liveData.temp, liveData.precipitation]);
+
   return (
     <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', color: th.t1, fontFamily: "'Inter', sans-serif", transition: 'color 1.5s ease' }}>
       
