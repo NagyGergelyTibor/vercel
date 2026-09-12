@@ -2948,7 +2948,7 @@ const genRainData = () => {
 const RAIN_DATASETS = genRainData();
 
 /* ═══════════════ PRECIPITATION PAGE (CSAPADÉK) ═══════════════ */
-function PrecipitationPage({ th, addToast }) {
+function PrecipitationPage({ th, addToast, liveData }) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1w'); // Alapértelmezetten 1 hét, hogy lássunk is esőt
   const [activeBtn, setActiveBtn] = useState(null);
@@ -2965,7 +2965,7 @@ function PrecipitationPage({ th, addToast }) {
   const intensities = data.map(d => d.intensity);
   const accumulations = data.map(d => d.acc);
   
-  const currentInt = intensities[intensities.length - 1];
+  const currentInt = liveData.precipitation;
   const maxInt = Math.max(...intensities);
   const totalAcc = parseFloat(accumulations.reduce((a, b) => a + b, 0).toFixed(1));
   const maxAcc = Math.max(...accumulations);
@@ -3348,7 +3348,7 @@ const genRoseData = () => {
 const ROSE_DATA = genRoseData();
 
 /* ═══════════════ WIND PAGE (SZÉLADATOK) ═══════════════ */
-function WindPage({ th, addToast}) {
+function WindPage({ th, addToast, liveData}) {
   const [show, setShow] = useState(false);
   const [range, setRange] = useState('1d');
   const [activeBtn, setActiveBtn] = useState(null);
@@ -3364,13 +3364,13 @@ function WindPage({ th, addToast}) {
   const data = chartData;
   const speeds = data.map(d => d.speed);
 
-  const currentSpeed = R.windSpeed;
+  const currentSpeed = liveData.windSpeed;
   const maxSpeed = Math.max(...speeds);
   const avgSpeed = parseFloat((speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1));
 
   const bf = getBeaufort(currentSpeed);
   const dominantRose = ROSE_DATA.reduce((a, b) => (b.pct > a.pct ? b : a), ROSE_DATA[0]);
-  const windLabel = getWindLabel(R.windDir);
+  const windLabel = getWindLabel(liveData.windDir);
 
   /* ─── TENDENCIA LOGIKA ─── */
   const prevSpeed = speeds[speeds.length - 2] || 0;
@@ -3396,7 +3396,7 @@ function WindPage({ th, addToast}) {
   };
 
   const exportJSON = () => {
-    const payload = { exportedAt: new Date().toISOString(), range: displayRange, windDirectionDeg: R.windDir, windDirectionLabel: windLabel, records: data.map(d => ({ t: d.t, speed: d.speed })) };
+    const payload = { exportedAt: new Date().toISOString(), range: displayRange, windDirectionDeg: liveData.windDir, windDirectionLabel: windLabel, records: data.map(d => ({ t: d.t, speed: d.speed })) };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `szeladatok_${displayRange}.json`; a.click();
@@ -3405,7 +3405,7 @@ function WindPage({ th, addToast}) {
 
   const exportXML = () => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<telemetry>\n`;
-    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <windDirectionDeg>${R.windDir}</windDirectionDeg>\n    <windDirectionLabel>${windLabel}</windDirectionLabel>\n  </metadata>\n`;
+    xml += `  <metadata>\n    <exportedAt>${new Date().toISOString()}</exportedAt>\n    <range>${displayRange}</range>\n    <windDirectionDeg>${liveData.windDir}</windDirectionDeg>\n    <windDirectionLabel>${windLabel}</windDirectionLabel>\n  </metadata>\n`;
     xml += `  <records>\n`;
     data.forEach(d => {
       xml += `    <record>\n      <time>${d.t}</time>\n      <speed>${d.speed}</speed>\n    </record>\n`;
@@ -3509,9 +3509,9 @@ function WindPage({ th, addToast}) {
         <Card show={show} delay={140} t={th} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Lbl t={th}>Aktuális Szélirány</Lbl>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <WindCompass show={show} t={th} />
+            <WindCompass show={show} t={th} direction={liveData.windDir} />
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: -8 }}>
-              <span style={{ ...tech, fontSize: 26, fontWeight: 700, color: th.t1 }}>{R.windDir}°</span>
+              <span style={{ ...tech, fontSize: 26, fontWeight: 700, color: th.t1 }}>{liveData.windDir}°</span>
               <span style={{ ...ui, fontSize: 15, color: th.t2, fontWeight: 500 }}>{windLabel}</span>
             </div>
           </div>
@@ -4362,8 +4362,8 @@ export default function App() {
       case 'humidity': return <HumidityPage th={th} addToast={addToast} liveData={liveData} />;
       case 'pressure': return <PressurePage th={th} addToast={addToast} liveData={liveData} />;
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
-      case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} />;
-      case 'wind':          return <WindPage th={th} addToast={addToast} />;
+      case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} liveData={liveData} />;
+      case 'wind':          return <WindPage th={th} addToast={addToast} liveData={liveData} />;
       default: return <DashboardContent phase={phase} th={th} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveData={liveData} chartHourly={chartHourly} chartWeekly={chartWeekly} />;
     }  };
   // ─────────────────────────────────────────────────────────────
