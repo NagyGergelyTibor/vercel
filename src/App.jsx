@@ -2990,12 +2990,20 @@ function PrecipitationPage({ th, addToast, liveData }) {
     if (i === 0) daysSinceRain = `Több mint 1 ${displayRange === '1w' ? 'hete' : 'hónapja'}`;
   }
 
-  /* ─── VÍZGAZDÁLKODÁS ÉS ÖNTÖZÉS LOGIKA ─── */
+  /* ─── VÍZGAZDÁLKODÁS ÉS ÖNTÖZÉS LOGIKA (DINAMIKUS) ─── */
+  const referenceValues = { '1h': 0.1, '1d': 1.5, '1w': 10.5, '1mo': 45.0 };
+  const currentRef = referenceValues[displayRange] || 25.0;
+
   let irrigationAdvice;
-  if (totalAcc === 0) irrigationAdvice = 'Kritikusan száraz. Öntözés kötelező!';
-  else if (totalAcc < 5) irrigationAdvice = 'Száraz talaj. Öntözés javasolt.';
-  else if (totalAcc < 20) irrigationAdvice = 'Optimális talajnedvesség.';
-  else irrigationAdvice = 'Telített talaj. Öntözés nem szükséges.';
+  if (totalAcc === 0) {
+    irrigationAdvice = 'Kritikusan száraz. Öntözés kötelező!';
+  } else if (totalAcc < currentRef * 0.4) {
+    irrigationAdvice = 'Száraz talaj. Öntözés javasolt.';
+  } else if (totalAcc < currentRef * 1.2) {
+    irrigationAdvice = 'Optimális talajnedvesség.';
+  } else {
+    irrigationAdvice = 'Telített talaj. Öntözés nem szükséges.';
+  }
 
   /* ─── TENDENCIA LOGIKA ─── */
   const prevInt = intensities[intensities.length - 2] || 0;
@@ -3226,7 +3234,7 @@ function PrecipitationPage({ th, addToast, liveData }) {
                 {/* Folyadék Animáció */}
                 <div style={{ 
                   position: 'absolute', bottom: 0, left: 0, right: 0, 
-                  height: `${Math.min(100, (totalAcc / 50) * 100)}%`, // 50mm a henger max kapacitása vizuálisan
+                  height: `${Math.min(100, (totalAcc / Math.max(1, currentRef * 1.5)) * 100)}%`, // A henger az elvárt referencia 150%-ánál telik meg
                   background: 'linear-gradient(180deg, #38BDF8 0%, #0284C7 100%)',
                   transition: 'height 1.5s cubic-bezier(0.16, 1, 0.3, 1)',
                   opacity: totalAcc > 0 ? 0.9 : 0
@@ -3244,7 +3252,7 @@ function PrecipitationPage({ th, addToast, liveData }) {
                 </div>
                 <div>
                   <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>Referencia (Átlag)</div>
-                  <div style={{ ...tech, fontSize: 16, fontWeight: 500, color: th.t1 }}>~ 25.0 <span style={{ ...ui, fontSize: 12, fontWeight: 400, color: th.t2 }}>mm</span></div>
+                  <div style={{ ...tech, fontSize: 16, fontWeight: 500, color: th.t1 }}>~ {currentRef.toFixed(1)} <span style={{ ...ui, fontSize: 12, fontWeight: 400, color: th.t2 }}>mm</span></div>
                 </div>
               </div>
             </div>
