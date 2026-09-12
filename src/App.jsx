@@ -1481,16 +1481,25 @@ function TemperaturePage({ th, addToast, liveData }) {
   const minT = Math.min(...temps);
   const maxT = Math.max(...temps);
   const avgT = parseFloat((temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1));
-  const currentT = temps[temps.length - 1];
+  const currentT = liveData.temp;
 
   const lookback = Math.min(3, temps.length - 1);
   const prevT = temps[temps.length - 1 - lookback];
   const trendDiff = parseFloat((currentT - prevT).toFixed(1));
-  const intervalLabels = { '1h': '15p', '1d': 'ó', '1w': '6ó', '1mo': 'nap' };
-
-  /* Meteorológiai trend skála */
+  /* ─── Meteorológiai trend skála és Emberi Időfelirat ─── */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
+  const totalTrendHours = lookback * intervalHours[displayRange];
+  
+  let trendTimeLabel = '';
+  if (totalTrendHours < 1) {
+    trendTimeLabel = `az elmúlt ${Math.round(totalTrendHours * 60)} percben`;
+  } else if (totalTrendHours < 24) {
+    trendTimeLabel = `az elmúlt ${totalTrendHours} órában`;
+  } else {
+    trendTimeLabel = `az elmúlt ${totalTrendHours / 24} napban`;
+  }
+
+  const ratePerHour = parseFloat((trendDiff / totalTrendHours).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 1.0) { trendColor = '#EF4444'; trendLabel = 'Gyorsan melegedő'; trendArrow = '⇡'; }
@@ -1703,7 +1712,7 @@ function TemperaturePage({ th, addToast, liveData }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}°C
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[displayRange]} óta
+                {trendTimeLabel}
               </div>
             </div>
           </div>
@@ -1807,7 +1816,7 @@ function HumidityPage({ th, addToast, liveData }) {
   const minH = Math.min(...hums);
   const maxH = Math.max(...hums);
   const avgH = parseFloat((hums.reduce((a, b) => a + b, 0) / hums.length).toFixed(1));
-  const currentH = hums[hums.length - 1];
+  const currentH = liveData.humidity;
 
   const lookback = Math.min(3, hums.length - 1);
   const prevH = hums[hums.length - 1 - lookback];
@@ -2104,7 +2113,7 @@ function PressurePage({ th, addToast, liveData }) {
   const minP = Math.min(...press);
   const maxP = Math.max(...press);
   const avgP = parseFloat((press.reduce((a, b) => a + b, 0) / press.length).toFixed(1));
-  const currentP = press[press.length - 1];
+  const currentP = liveData.pressure;
 
   const lookback = Math.min(3, press.length - 1);
   const prevP = press[press.length - 1 - lookback];
@@ -2472,8 +2481,8 @@ function BrightnessPage({ th, addToast, liveData }) {
   const luxs = data.map(d => d.lux);
   const uvs = data.map(d => d.uv);
   
-  const currentLux = luxs[luxs.length - 1];
-  const currentUV = uvs[uvs.length - 1];
+  const currentLux = liveData.lux;
+  const currentUV = liveData.uvIndex;
   const maxLux = Math.max(...luxs);
   const maxUV = Math.max(...uvs);
 
@@ -3253,7 +3262,7 @@ function PrecipitationPage({ th, addToast, liveData, chartWeekly }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <div style={{ ...ui, fontSize: 11, color: th.lbl, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>
-                    {displayRange === '1mo' ? 'Havi Összeg' : (needsWeeklyOverride ? 'Heti Összeg (Öntözéshez)' : 'Heti Összeg')}
+                    {displayRange === '1mo' ? 'Havi Összeg' : (needsWeeklyOverride ? 'Heti Összeg' : 'Heti Összeg')}
                   </div>
                   <div style={{ ...tech, fontSize: 24, fontWeight: 700, color: '#3B82F6', lineHeight: 1 }}>{irrigationTotal.toFixed(1)} <span style={{ ...ui, fontSize: 12, fontWeight: 500, color: th.t2 }}>mm</span></div>
                 </div>
