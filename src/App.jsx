@@ -1417,7 +1417,7 @@ function SensorLayout({ title, icon, color, th, show, children }) {
 
 
 /* ═══════════════ TEMPERATURE PAGE (GHOSTING UPDATE) ═══════════════ */
-function TemperaturePage({ th, addToast }) {
+function TemperaturePage({ th, addToast, liveData }) {
   
   // 1. A VARÁZSLAT: Kettéválasztjuk a gombot és az adatot!
   const [show, setShow] = useState(false);
@@ -1536,7 +1536,7 @@ function TemperaturePage({ th, addToast }) {
             <div>
               <Lbl t={th}>Hőmérséklet Idősora</Lbl>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.w, letterSpacing: '-0.03em', lineHeight: 1 }}>{currentT}</span>
+                <span style={{ ...tech, fontSize: 38, fontWeight: 700, color: th.w, letterSpacing: '-0.03em', lineHeight: 1 }}>{liveData.temp.toFixed(1)}</span>
                 <span style={{ ...ui, fontSize: 16, color: th.t2, fontWeight: 400 }}>°C</span>
                 <span style={{ ...ui, fontSize: 12, color: trendColor, fontWeight: 600, marginLeft: 4 }}>
                   {trendArrow} {trendLabel}
@@ -1686,8 +1686,8 @@ function TemperaturePage({ th, addToast }) {
                 { label: 'Minimum', value: `${minT}°C`, color: '#0EA5E9', icon: '▼' },
                 { label: 'Maximum', value: `${maxT}°C`, color: '#EF4444', icon: '▲' },
                 { label: 'Időszaki Átlag', value: `${avgT}°C`, color: th.t1, icon: '≈' },
-                { label: 'Hőérzet', value: `${R.feelsLike}°C`, color: th.w, icon: '🌡' },
-                { label: 'Harmatpont', value: `${R.dewPoint}°C`, color: th.p, icon: '💧' },
+                { label: 'Hőérzet', value: `${liveData.feelsLike}°C`, color: th.w, icon: '🌡' },
+                { label: 'Harmatpont', value: `${liveData.dewPoint}°C`, color: th.p, icon: '💧' },
               ].map(({ label, value, color, icon }, i, arr) => (
                 <div key={label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -4314,7 +4314,7 @@ export default function App() {
   // ─── TOAST: 2. Az addToast függvény átadása az aloldalaknak ───
   const renderPage = () => {
     switch (currentPage) {
-      case 'temperature':   return <TemperaturePage th={th} addToast={addToast} />;
+      case 'temperature':   return <TemperaturePage th={th} addToast={addToast} liveData={liveData} />;
       case 'humidity':      return <HumidityPage th={th} addToast={addToast} />;
       case 'pressure':      return <PressurePage th={th} addToast={addToast} />;
       case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
