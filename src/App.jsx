@@ -1821,11 +1821,20 @@ function HumidityPage({ th, addToast, liveData }) {
   const lookback = Math.min(3, hums.length - 1);
   const prevH = hums[hums.length - 1 - lookback];
   const trendDiff = parseFloat((currentH - prevH).toFixed(1));
-  const intervalLabels = { '1h': '15p', '1d': 'ó', '1w': '6ó', '1mo': 'nap' };
-
-  /* Meteorológiai trend skála: Páratartalom logikával */
+  /* ─── Meteorológiai trend skála és Emberi Időfelirat ─── */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
+  const totalTrendHours = lookback * intervalHours[displayRange];
+  
+  let trendTimeLabel = '';
+  if (totalTrendHours < 1) {
+    trendTimeLabel = `az elmúlt ${Math.round(totalTrendHours * 60)} percben`;
+  } else if (totalTrendHours < 24) {
+    trendTimeLabel = `az elmúlt ${totalTrendHours} órában`;
+  } else {
+    trendTimeLabel = `az elmúlt ${totalTrendHours / 24} napban`;
+  }
+
+  const ratePerHour = parseFloat((trendDiff / totalTrendHours).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 2.0) { trendColor = '#0284C7'; trendLabel = 'Erős párásodás'; trendArrow = '⇡'; }
@@ -2010,7 +2019,7 @@ function HumidityPage({ th, addToast, liveData }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}%
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[displayRange]} óta
+                {trendTimeLabel}
               </div>
             </div>
           </div>
@@ -2118,11 +2127,20 @@ function PressurePage({ th, addToast, liveData }) {
   const lookback = Math.min(3, press.length - 1);
   const prevP = press[press.length - 1 - lookback];
   const trendDiff = parseFloat((currentP - prevP).toFixed(1));
-  const intervalLabels = { '1h': '15p', '1d': 'ó', '1w': '6ó', '1mo': 'nap' };
-
-  /* Meteorológiai trend skála: Légnyomás (Barométer) logikával */
+  /* ─── Meteorológiai trend skála és Emberi Időfelirat ─── */
   const intervalHours = { '1h': 0.25, '1d': 1, '1w': 6, '1mo': 24 };
-  const ratePerHour = parseFloat((trendDiff / (lookback * intervalHours[displayRange])).toFixed(2));
+  const totalTrendHours = lookback * intervalHours[displayRange];
+  
+  let trendTimeLabel = '';
+  if (totalTrendHours < 1) {
+    trendTimeLabel = `az elmúlt ${Math.round(totalTrendHours * 60)} percben`;
+  } else if (totalTrendHours < 24) {
+    trendTimeLabel = `az elmúlt ${totalTrendHours} órában`;
+  } else {
+    trendTimeLabel = `az elmúlt ${totalTrendHours / 24} napban`;
+  }
+
+  const ratePerHour = parseFloat((trendDiff / totalTrendHours).toFixed(2));
   
   let trendColor, trendLabel, trendArrow;
   if (ratePerHour >= 1.0) { trendColor = '#10B981'; trendLabel = 'Gyorsan javuló idő'; trendArrow = '⇡'; }
@@ -2305,7 +2323,7 @@ function PressurePage({ th, addToast, liveData }) {
                 {trendDiff > 0 ? '+' : ''}{trendDiff}
               </div>
               <div style={{ ...ui, fontSize: 12, color: th.t2, marginTop: 4 }}>
-                az előző {lookback}× {intervalLabels[displayRange]} óta
+                {trendTimeLabel}
               </div>
             </div>
           </div>
