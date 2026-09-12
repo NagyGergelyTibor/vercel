@@ -4324,7 +4324,7 @@ export default function App() {
     }  };
   // ─────────────────────────────────────────────────────────────
 
-  // ─── ÚJ: ÉLŐ BÖNGÉSZŐFÜL (TITLE ÉS FAVICON) ───
+  // ─── ÚJ: ÉLŐ BÖNGÉSZŐFÜL (TITLE ÉS FAVICON) - CANVAS VERZIÓ ───
   useEffect(() => {
     if (liveData.temp === undefined) return;
 
@@ -4335,20 +4335,35 @@ export default function App() {
     let iconEmoji = isDay ? "☀️" : "🌙";
     if (isRaining) iconEmoji = "🌧️";
 
-    // 1. JAVÍTVA: Kivettük az emojit a szövegből, csak a hőmérséklet maradt
     document.title = `${liveData.temp}°C | Időjárás`;
 
-    // 2. JAVÍTVA: Középre zárt SVG (x="50%", y="50%", text-anchor) és kisebb méret (font-size="80")
+    // 1. Létrehozunk egy 64x64 pixeles láthatatlan vásznat
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    // 2. Beállítjuk a betűtípust és középre zárjuk
+    ctx.font = '50px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // 3. Ráfestjük az emojit pontosan a vászon közepére (32, 36)
+    ctx.fillText(iconEmoji, 32, 36); 
+
+    // 4. A vásznat átalakítjuk egy tökéletes, levághatatlan PNG képpé
+    const faviconUrl = canvas.toDataURL('image/png');
+
+    // 5. Beállítjuk az ikonnak
     let link = document.querySelector("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
       link.rel = 'icon';
       document.head.appendChild(link);
     }
+    link.type = 'image/png';
+    link.href = faviconUrl;
     
-    // JAVÍTVA: viewBox="0 0 120 120" -> 20%-kal nagyobb a vászon, így az emoji garantáltan nem lóg ki a széleken!
-    link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><text x="50%" y="55%" dominant-baseline="central" text-anchor="middle" font-size="80">${iconEmoji}</text></svg>`;
-
   }, [liveData.temp, liveData.precipitation]);
 
   return (
