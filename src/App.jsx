@@ -4274,8 +4274,8 @@ export default function App() {
       currentIcon = '🌅';
     }
 
-    // SVG generálás és beillesztés
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${currentIcon}</text></svg>`;
+    // SVG generálás és beillesztés (középre igazítva, hogy ne vágódjon le a szél)
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="80">${currentIcon}</text></svg>`;
     let link = document.querySelector("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
@@ -4290,26 +4290,26 @@ export default function App() {
       'pressure': 'Légnyomás', 'brightness': 'UV és Fényerő', 'precipitation': 'Csapadék', 'wind': 'Széladatok'
     };
 
-    // Kiválasztjuk az aloldalhoz illő legfontosabb adatot
-    let activeData = `${R.temp.toFixed(1)}°C`; // Alapértelmezett
+    // Kiválasztjuk az aloldalhoz illő legfontosabb adatot (ÉLŐ adatból, nem a statikus mock-ból!)
+    let activeData = `${liveData.temp.toFixed(1)}°C`; // Alapértelmezett
     
     if (isOffline) {
       activeData = 'Offline';
     } else {
       switch (currentPage) {
-        case 'humidity':      activeData = `${R.humidity}%`; break;
-        case 'pressure':      activeData = `${Math.round(R.pressure)} hPa`; break;
-        case 'wind':          activeData = `${R.windSpeed.toFixed(1)} km/h`; break;
-        case 'precipitation': activeData = `${R.precipitation.toFixed(1)} mm`; break;
-        case 'brightness':    activeData = `${R.uvIndex} UVI`; break;
-        default:              activeData = `${R.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
+        case 'humidity':      activeData = `${liveData.humidity}%`; break;
+        case 'pressure':      activeData = `${Math.round(liveData.pressure)} hPa`; break;
+        case 'wind':          activeData = `${liveData.windSpeed.toFixed(1)} km/h`; break;
+        case 'precipitation': activeData = `${liveData.precipitation.toFixed(1)} mm`; break;
+        case 'brightness':    activeData = `${liveData.uvIndex} UVI`; break;
+        default:              activeData = `${liveData.temp.toFixed(1)}°C`; // Hőmérséklet és Dashboard
       }
     }
 
     // Címsor beállítása
     document.title = `${activeData} · ${pageLabels[currentPage]} · METEO`;
 
-  }, [currentPage, phase, isRaining, isWindy, R, simulatedTime, lastDataTimestamp]);
+  }, [currentPage, phase, isRaining, isWindy, liveData, simulatedTime, lastDataTimestamp]);
 
   // ─── TOAST: 2. Az addToast függvény átadása az aloldalaknak ───
   const renderPage = () => {
@@ -4323,48 +4323,6 @@ export default function App() {
       default: return <DashboardContent phase={phase} th={th} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveData={liveData} chartHourly={chartHourly} chartWeekly={chartWeekly} />;
     }  };
   // ─────────────────────────────────────────────────────────────
-
-  // ─── ÚJ: ÉLŐ BÖNGÉSZŐFÜL (TITLE ÉS FAVICON) - CANVAS VERZIÓ ───
-  useEffect(() => {
-    if (liveData.temp === undefined) return;
-
-    const hour = new Date().getHours();
-    const isDay = hour >= 6 && hour < 20;
-    const isRaining = liveData.precipitation > 0;
-    
-    let iconEmoji = isDay ? "☀️" : "🌙";
-    if (isRaining) iconEmoji = "🌧️";
-
-    document.title = `${liveData.temp}°C | Időjárás`;
-
-    // 1. Létrehozunk egy 64x64 pixeles láthatatlan vásznat
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    
-    // 2. Beállítjuk a betűtípust és középre zárjuk
-    ctx.font = '50px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    // 3. Ráfestjük az emojit pontosan a vászon közepére (32, 36)
-    ctx.fillText(iconEmoji, 32, 36); 
-
-    // 4. A vásznat átalakítjuk egy tökéletes, levághatatlan PNG képpé
-    const faviconUrl = canvas.toDataURL('image/png');
-
-    // 5. Beállítjuk az ikonnak
-    let link = document.querySelector("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.type = 'image/png';
-    link.href = faviconUrl;
-    
-  }, [liveData.temp, liveData.precipitation]);
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', color: th.t1, fontFamily: "'Inter', sans-serif", transition: 'color 1.5s ease' }}>
