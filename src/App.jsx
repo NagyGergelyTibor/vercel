@@ -4431,12 +4431,12 @@ export default function App() {
 
               // 1. GÖRDÜLŐ ABLAK (Sliding Window): A 24 órás trendhez
               setChartHourly(prevChart => {
-                const newChart = [...prevChart.slice(1)]; // Levágjuk az első (legrégebbi) órát (csúszás balra)
-                const lastTime = prevChart[prevChart.length - 1].h;
+                const newChart = [...prevChart.slice(1)];
+                const lastEntry = prevChart[prevChart.length - 1];
+                const lastTime = lastEntry.t || lastEntry.h || '00:00';  // ÚJ: rugalmas, mindkét formátumot kezeli
                 let [hh] = lastTime.split(':');
                 let nextH = (parseInt(hh, 10) + 1) % 24;
-                // Hozzáadjuk a legújabb időpontot a végére
-                newChart.push({ h: `${String(nextH).padStart(2, '0')}:00`, t: newTemp, rh: newHum });
+                newChart.push({ t: `${String(nextH).padStart(2, '0')}:00`, temp: newTemp, hum: newHum });
                 return newChart;
               });
 
