@@ -4202,7 +4202,11 @@ export default function App() {
             sleepCycles: data.sleep_cycles !== undefined ? Number(data.sleep_cycles) : prev.sleepCycles,
             deepSleep: data.deep_sleep_pct !== undefined ? Number(data.deep_sleep_pct) : prev.deepSleep
           }));
-          if (data._time) setLastDataTimestamp(new Date(data._time).getTime());
+          if (data._time) {
+            // Megbizonyosodunk róla, hogy a böngésző felismeri, hogy a bejövő idő UTC formátumú
+            const timeString = data._time.endsWith('Z') ? data._time : `${data._time}Z`;
+            setLastDataTimestamp(new Date(timeString).getTime());
+          }
         }
         setAppLoaded(true);
       } catch (error) {
