@@ -47,7 +47,10 @@ export default async function handler(req, res) {
         
         // A nyers Influx adatokat szigorú "Recharts-barát" objektumokká alakítjuk
         const formattedData = data.map(row => {
-            const date = new Date(row._time);
+            const rawDate = new Date(row._time);
+            const huDateString = rawDate.toLocaleString('en-US', { timeZone: 'Europe/Budapest' });
+            const date = new Date(huDateString);
+            
             let timeLabel = '';
 
             // A X tengely feliratának formázása a nézethez igazítva
@@ -66,15 +69,18 @@ export default async function handler(req, res) {
             // Így a React Recharts diagramja sosem fagy le "undefined" vagy "null" miatt!
             return {
                 t: timeLabel,
-                temp: row.temperature != null ? parseFloat(row.temperature.toFixed(1)) : 22.0, // Fallback hőmérséklet
-                hum: row.humidity != null ? parseFloat(row.humidity.toFixed(1)) : 50.0,      // Fallback páratartalom
-                pres: row.pressure != null ? parseFloat(row.pressure.toFixed(1)) : 1013.2,   // Fallback légnyomás
-                speed: row.wind_speed != null ? parseFloat(row.wind_speed.toFixed(1)) : 0.0,   // Fallback szélsebesség
+                temp: row.temperature != null ? parseFloat(row.temperature.toFixed(1)) : 22.0, 
+                hum: row.humidity != null ? parseFloat(row.humidity.toFixed(1)) : 50.0,      
+                pres: row.pressure != null ? parseFloat(row.pressure.toFixed(1)) : 1013.2,   
+                speed: row.wind_speed != null ? parseFloat(row.wind_speed.toFixed(1)) : 0.0,   
                 gust: row.wind_speed != null ? parseFloat((row.wind_speed * 1.3).toFixed(1)) : 0.0, 
                 acc: row.rain != null ? parseFloat(row.rain.toFixed(1)) : 0.0,
                 intensity: row.rain != null ? parseFloat(row.rain.toFixed(1)) : 0.0,
                 lux: row.lux != null ? Math.round(row.lux) : 0,
-                uv: row.uv != null ? parseFloat(row.uv.toFixed(1)) : 0.0
+                uv: row.uv != null ? parseFloat(row.uv.toFixed(1)) : 0.0,
+                
+                // JAVÍTÁS: Szélirány bekötése a szélrózsához!
+                windDir: row.wind_direction != null ? Math.round(row.wind_direction) : 0
             };
         });
 
