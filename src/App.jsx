@@ -4467,8 +4467,8 @@ export default function App() {
         {renderPage()}
       </SmoothScroll>
       
-      {/* Vezérlőgombok (Demo) */}
-      <div style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 300, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+      {/* Vezérlőgombok (Demo) - VIDEÓZÁSHOZ ELREJTVE */}
+      <div style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 300, display: 'none', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 320 }}>
           {['night', 'dawn', 'day', 'sunset', 'evening'].map(ph => (
             <button key={ph} onClick={() => setSimPhase(simPhase === ph ? null : ph)}
