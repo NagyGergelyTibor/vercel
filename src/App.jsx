@@ -4443,7 +4443,7 @@ export default function App() {
       case 'temperature':   return <TemperaturePage th={th} addToast={addToast} liveData={liveData} />;
       case 'humidity': return <HumidityPage th={th} addToast={addToast} liveData={liveData} />;
       case 'pressure': return <PressurePage th={th} addToast={addToast} liveData={liveData} />;
-      case 'brightness':    return <BrightnessPage th={th} isRaining={isRaining} addToast={addToast} />;
+      case 'brightness':    return <BrightnessPage th={th} addToast={addToast} liveData={liveData} />;
       case 'precipitation': return <PrecipitationPage th={th} addToast={addToast} liveData={liveData} chartWeekly={chartWeekly} />;
       case 'wind':          return <WindPage th={th} addToast={addToast} liveData={liveData} />;
       default: return <DashboardContent phase={phase} th={th} isRaining={isRaining} isWindy={isWindy} setCurrentPage={setCurrentPage} appLoaded={appLoaded} liveData={liveData} chartHourly={chartHourly} chartWeekly={chartWeekly} />;
